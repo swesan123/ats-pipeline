@@ -64,19 +64,22 @@ def _extract_job_info_from_text(text: str) -> tuple[str, str]:
                 company.lower() not in potential_title.lower()):
                 return potential_title, company
     
-    # Pattern 2: Look for "at [Company]" anywhere in text and extract preceding title
-    match = re.search(r'([A-Z][a-zA-Z\s&]{5,50}?)\s+at\s+([A-Z][a-zA-Z\s&]{2,40}?)(?:\s+·|\s*$|\n|Toronto|New York|\(Hybrid\)|\(Remote\)|Show)', text_clean, re.IGNORECASE)
-    if match:
-        potential_title = match.group(1).strip()
-        company = match.group(2).strip()
-        # Clean up
-        company = re.sub(r'\s+(Toronto|New York|Hybrid|Remote|Show|Apply|Save).*$', '', company, flags=re.IGNORECASE).strip()
-        potential_title = re.sub(r'^(Save\s+)+', '', potential_title, flags=re.IGNORECASE).strip()
-        # Only use if it looks like a job title (has common keywords or is reasonable length)
-        if len(potential_title) > 5 and len(potential_title) < 60:
-            title = potential_title
-            if company and company != "Unknown":
-                return title, company
+    # Pattern 2: Look for "at [Company]" anywhere in text and extract preceding title (fallback)
+    # Only use if Pattern 1 didn't find anything
+    if title == "Unknown" or company == "Unknown":
+        match = re.search(r'([A-Z][a-zA-Z\s&]{5,50}?)\s+at\s+([A-Z][a-zA-Z]+)(?:\s+·|\s*$|\n|Toronto|New York|\(Hybrid\)|\(Remote\)|Show|AI|Engineer)', text_clean, re.IGNORECASE)
+        if match:
+            potential_title = match.group(1).strip()
+            potential_company = match.group(2).strip()
+            # Clean up
+            potential_company = re.sub(r'\s+(Toronto|New York|Hybrid|Remote|Show|Apply|Save).*$', '', potential_company, flags=re.IGNORECASE).strip()
+            potential_title = re.sub(r'^(Save\s+)+', '', potential_title, flags=re.IGNORECASE).strip()
+            # Only use if it looks like a job title (has common keywords or is reasonable length)
+            if len(potential_title) > 5 and len(potential_title) < 60 and len(potential_company) < 30:
+                title = potential_title
+                company = potential_company
+                if company and company != "Unknown":
+                    return title, company
     
     # Pattern 3: Extract title from beginning - look for common job title patterns
     title_match = re.search(r'^([A-Z][a-zA-Z\s&]{5,50}?(?:Engineer|Developer|Manager|Analyst|Architect|Scientist|Specialist|Consultant|Lead|Director|VP|President|Designer|Coordinator))', text_clean, re.IGNORECASE)
