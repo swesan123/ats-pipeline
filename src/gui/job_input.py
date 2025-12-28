@@ -44,12 +44,18 @@ def _extract_job_info_from_text(text: str) -> tuple[str, str]:
         title_match = re.search(r'([A-Z][a-zA-Z\s&]{5,50}?(?:Engineer|Developer|Manager|Analyst|Architect|Scientist|Specialist|Consultant|Lead|Director|VP|President|Designer|Coordinator))\s+at\s*$', before_at, re.IGNORECASE)
         if title_match:
             potential_title = title_match.group(1).strip()
-            company = match.group(1).strip()
-            # Clean up title - remove "Save Save", "Apply", etc.
-            potential_title = re.sub(r'^(Save\s+)+', '', potential_title, flags=re.IGNORECASE).strip()
-            potential_title = re.sub(r'^(Apply\s+)+', '', potential_title, flags=re.IGNORECASE).strip()
-            # Clean up company
-            company = re.sub(r'\s+(Toronto|New York|Hybrid|Remote|Show|Apply|Save|AI Platform).*$', '', company, flags=re.IGNORECASE).strip()
+            company_raw = match.group(1).strip()
+            # Clean up company - take only the first word/phrase (company name)
+            # Stop at common delimiters or if it contains the title (which means it captured too much)
+            company = company_raw
+            # Remove location and other text
+            company = re.sub(r'\s+(Toronto|New York|Hybrid|Remote|Show|Apply|Save).*$', '', company, flags=re.IGNORECASE).strip()
+            # If company contains the title, it means we captured too much - just take first word
+            if potential_title.lower() in company.lower():
+                # Extract just the company name (first word or two)
+                company_match = re.match(r'^([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)', company)
+                if company_match:
+                    company = company_match.group(1).strip()
             # Remove duplicate words in company
             words = company.split()
             if len(words) > 1 and words[0] == words[-1]:
@@ -57,7 +63,8 @@ def _extract_job_info_from_text(text: str) -> tuple[str, str]:
             # Validate
             if (potential_title and company and company != "Unknown" and 
                 len(company) < 50 and len(potential_title) > 5 and 
-                not potential_title.lower().startswith(('save', 'apply'))):
+                not potential_title.lower().startswith(('save', 'apply')) and
+                potential_title.lower() not in company.lower()):
                 return potential_title, company
     
     # Pattern 2: Look for "at [Company]" anywhere in text and extract preceding title
