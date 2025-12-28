@@ -1,5 +1,12 @@
 """Main Streamlit window for job management."""
 
+import sys
+from pathlib import Path
+
+# Add project root to path for imports
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
 import streamlit as st
 from src.db.database import Database
 from src.gui.job_list import render_job_list

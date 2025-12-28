@@ -421,8 +421,11 @@ Options:
 Launch the Streamlit GUI for visual job management:
 
 ```bash
+# From the project root directory
 streamlit run src/gui/main_window.py
 ```
+
+**Note:** Make sure you're in the project root directory when running this command. The GUI files automatically add the project root to the Python path to resolve imports.
 
 The GUI provides:
 - **Left Panel**: Add jobs by pasting job descriptions or URLs
