@@ -29,16 +29,22 @@ def _extract_job_info_from_text(text: str) -> tuple[str, str]:
     
     # Pattern 1: "Title at Company" (most common LinkedIn format)
     # Look for patterns like "AI Platform Engineer at Denvr" anywhere in text
-    # This is the most reliable pattern
-    match = re.search(r'([A-Z][a-zA-Z\s&]{5,50}?(?:Engineer|Developer|Manager|Analyst|Architect|Scientist|Specialist|Consultant|Lead|Director|VP|President|Designer|Coordinator))\s+at\s+([A-Z][a-zA-Z\s&]{2,40}?)(?:\s+·|\s*$|\n|Toronto|New York|\(Hybrid\)|\(Remote\)|Show)', text_clean, re.IGNORECASE)
+    # Skip over "Save Save" and "Apply" artifacts
+    # Match: (not Save/Apply) + (Title with job keywords) + "at" + (Company)
+    match = re.search(r'(?:Save\s+)*?(?:Apply\s+)*?([A-Z][a-zA-Z\s&]{5,50}?(?:Engineer|Developer|Manager|Analyst|Architect|Scientist|Specialist|Consultant|Lead|Director|VP|President|Designer|Coordinator))\s+at\s+([A-Z][a-zA-Z\s&]{2,40}?)(?:\s+·|\s*$|\n|Toronto|New York|\(Hybrid\)|\(Remote\)|Show)', text_clean, re.IGNORECASE)
     if match:
         title = match.group(1).strip()
         company = match.group(2).strip()
+        # Clean up title - remove any leading "Save" or "Apply"
+        title = re.sub(r'^(Save\s+)+', '', title, flags=re.IGNORECASE).strip()
+        title = re.sub(r'^(Apply\s+)+', '', title, flags=re.IGNORECASE).strip()
         # Clean up company name (remove location and other text if captured)
         company = re.sub(r'\s+(Toronto|New York|Hybrid|Remote|Show|Apply|Save).*$', '', company, flags=re.IGNORECASE).strip()
-        # Clean up title (remove "Save Save" or other artifacts)
-        title = re.sub(r'^(Save\s+)+', '', title, flags=re.IGNORECASE).strip()
-        if title and company and company != "Unknown":
+        # Remove duplicate words in company name
+        words = company.split()
+        if len(words) > 1 and words[0] == words[-1]:
+            company = words[0]
+        if title and company and company != "Unknown" and len(company) < 50 and not title.startswith(('Save', 'Apply')):
             return title, company
     
     # Pattern 2: Look for "at [Company]" anywhere in text and extract preceding title
