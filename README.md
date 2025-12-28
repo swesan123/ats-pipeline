@@ -6,11 +6,15 @@ End-to-end job application pipeline with skill matching, explainable resume comp
 
 - **LaTeX Resume Parsing**: Convert LaTeX resumes to structured JSON
 - **Job Skill Extraction**: Automatically extract required/preferred skills from job descriptions using AI
+- **Job URL Scraping**: Extract job content from URLs (Greenhouse, Lever, LinkedIn, etc.)
 - **Skill Matching**: Calculate job fit scores and identify skill gaps
 - **Resume Rewriting**: Generate 4 bullet variations with reasoning chains for each improvement
 - **Interactive Approval**: Review and approve resume changes with detailed justifications
 - **PDF Generation**: Render updated resumes back to LaTeX and compile to PDF
 - **CLI Interface**: Command-line interface with `ats` command for all operations
+- **Full Application Flow**: Single `apply` command to run the entire pipeline
+- **User Skills Management**: Prevent skill fabrication with user-provided skills JSON
+- **Project Selection**: Automatically select relevant projects from your project library
 - **Resume Reuse System**: Automatically detect and reuse resumes from similar jobs
 - **Streamlit GUI**: Visual job management interface
 - **Database Persistence**: SQLite database for tracking jobs, matches, and changes
@@ -360,6 +364,58 @@ ats render-pdf [--resume-json <path>]
 Options:
 - `--resume-json`: Resume JSON file (default: `data/resume_updated.json`)
 
+### Project Management Commands
+
+#### `add-project`
+Add projects from resume JSON to project library.
+
+```bash
+ats add-project [--resume-json <path>] [--name <project_name>]
+```
+
+Options:
+- `--resume-json`: Resume JSON file (default: `data/resume.json`)
+- `--name`: Specific project name to add (if not provided, adds all projects from resume)
+
+Examples:
+```bash
+# Add all projects from resume
+ats add-project --resume-json data/resume.json
+
+# Add specific project
+ats add-project --resume-json data/resume.json --name "My Project"
+```
+
+#### `list-projects`
+List all projects in the library.
+
+```bash
+ats list-projects
+```
+
+#### `remove-project`
+Remove a project from the library.
+
+```bash
+ats remove-project --name <project_name>
+```
+
+Options:
+- `--name`: Project name to remove (required)
+
+#### `select-projects`
+Select most relevant projects for a job posting.
+
+```bash
+ats select-projects [--job-json <path>] [--max-projects <n>] [--min-score <float>] [--output <path>]
+```
+
+Options:
+- `--job-json`: Job skills JSON file (default: `data/job_skills.json`)
+- `--max-projects`: Maximum number of projects to select (default: 4)
+- `--min-score`: Minimum relevance score to include (default: 0.3)
+- `--output`: Output JSON file (default: `data/selected_projects.json`)
+
 ## GUI Usage
 
 Launch the Streamlit GUI for visual job management:
@@ -393,7 +449,7 @@ ats-pipeline/
 ├── tests/               # Test suite
 ├── scripts/             # Utility scripts
 ├── templates/           # LaTeX resume template
-├── .github/workflows/   # CI/CD configuration
+├── data/                # Output directory (resume.json, job_skills.json, etc.)
 ├── requirements.txt     # Production dependencies
 ├── requirements-dev.txt # Development dependencies
 └── pyproject.toml       # Project configuration
@@ -590,14 +646,40 @@ If you prefer to run each step individually:
    # Output saved to data/resume.pdf
    ```
 
+## Project Management
+
+The pipeline includes a project library system that allows you to store all your projects and automatically select the most relevant ones for each job application.
+
+### Setting Up Your Project Library
+
+1. **Add projects to the library:**
+   ```bash
+   # Add all projects from your resume
+   ats add-project --resume-json data/resume.json
+   
+   # Or add a specific project
+   ats add-project --resume-json data/resume.json --name "Project Name"
+   ```
+
+2. **List projects in library:**
+   ```bash
+   ats list-projects
+   ```
+
+3. **Select relevant projects for a job:**
+   ```bash
+   ats select-projects --job-json data/job_skills.json
+   ```
+
+The `rewrite-resume` and `apply` commands automatically select relevant projects from your library when generating resumes.
+
 ## Contributing
 
 1. Create a feature branch: `git checkout -b feature/your-feature-name`
 2. Make your changes
 3. Write/update tests
 4. Ensure tests pass: `pytest`
-5. Ensure code coverage: `pytest --cov=src --cov-fail-under=80`
-6. Submit a pull request
+5. Submit a pull request
 
 ## License
 
