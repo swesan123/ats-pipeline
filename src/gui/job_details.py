@@ -21,20 +21,27 @@ def _categorize_skills(skills: List[str]) -> Dict[str, List[str]]:
     Returns: Dict mapping category name to list of skills
     """
     # Define skill categories with keywords (order matters - more specific first)
+    # Check more specific categories first to avoid false matches
     skill_categories = {
-        "Languages": ["python", "java", "c++", "c#", "javascript", "typescript", "go", "golang", "rust", "ruby", "php", "r", "matlab", "swift", "kotlin", "scala", "clojure", "c", "cpp"],
-        "AI/ML & HPC": ["tensorflow", "pytorch", "keras", "scikit-learn", "numpy", "pandas", "machine learning", "deep learning", "ai", "ml", "neural", "cnn", "rnn", "hpc", "high-performance", "nvidia", "gpu", "a100", "h200", "gh200", "blackwell", "hopper", "ampere", "nccl", "distributed training"],
+        # Infrastructure categories (check first - most specific)
         "Kubernetes & Orchestration": ["kubernetes", "k8s", "rke", "kopf", "kube-ovn", "kubevirt", "operator", "cncf", "helm"],
-        "Cloud & Infrastructure": ["aws", "azure", "gcp", "cloud", "infrastructure", "iaas", "paas", "saas", "cloudformation"],
-        "DevOps & CI/CD": ["devops", "ci/cd", "jenkins", "gitlab", "github actions", "circleci", "travis", "bamboo", "pipeline", "deployment", "automation", "terraform", "ansible"],
+        "Virtualization & Bare Metal": ["vmware", "esxi", "vcenter", "kvm", "xen", "ironic", "metal3", "virtualization", "bare-metal", "provisioning"],
+        "Storage": ["ceph", "weka", "qumulo", "nfs", "s3", "powerstore", "rook", "storage", "object storage", "block storage", "file storage"],
         "Networking": ["bgp", "evpn", "sonic", "infiniband", "rdma", "roce", "leaf/spine", "topology", "network fabric", "throughput", "tcp/ip"],
-        "APIs & Microservices": ["fastapi", "rest", "graphql", "api", "microservices", "backend api", "asyncio", "pydantic"],
-        "Storage": ["storage", "ceph", "weka", "qumulo", "nfs", "s3", "object storage", "block storage", "file storage", "powerstore", "rook", "fabric"],
-        "Virtualization & Bare Metal": ["vmware", "esxi", "vcenter", "kvm", "xen", "virtualization", "container", "ironic", "metal3", "bare-metal", "provisioning"],
-        "Databases": ["postgresql", "mysql", "mongodb", "redis", "cassandra", "dynamodb", "elasticsearch", "sql", "nosql", "database", "db", "relational"],
+        "Cloud & Infrastructure": ["aws", "azure", "gcp", "cloudformation", "cloud", "infrastructure", "iaas", "paas", "saas"],
+        "DevOps & CI/CD": ["terraform", "ansible", "jenkins", "gitlab", "github actions", "circleci", "travis", "bamboo", "devops", "ci/cd", "pipeline", "deployment", "automation", "iac"],
         "Operating Systems": ["ubuntu", "debian", "centos", "rhel", "windows", "linux", "os management", "kernel", "system"],
-        "Frameworks & Libraries": ["react", "vue", "angular", "django", "flask", "express", "spring", "rails", "laravel", "framework", "library"],
         "Hardware & Platforms": ["supermicro", "dell", "hardware", "platform", "architecture", "compute", "data center", "datacenter"],
+        # AI/ML (check before languages to catch HPC terms)
+        "AI/ML & HPC": ["tensorflow", "pytorch", "keras", "scikit-learn", "numpy", "pandas", "nccl", "nvidia", "gpu", "a100", "h200", "gh200", "blackwell", "hopper", "ampere", "hpc", "high-performance", "distributed training", "machine learning", "deep learning", "neural", "cnn", "rnn"],
+        # APIs (check before languages to catch FastAPI, etc.)
+        "APIs & Microservices": ["fastapi", "rest", "graphql", "api", "microservices", "backend api", "asyncio", "pydantic"],
+        # Databases (check before languages)
+        "Databases": ["postgresql", "mysql", "mongodb", "redis", "cassandra", "dynamodb", "elasticsearch", "sql", "nosql", "database", "db", "relational"],
+        # Languages (check later - less specific)
+        "Languages": ["python", "java", "c++", "c#", "javascript", "typescript", "go", "golang", "rust", "ruby", "php", "r", "matlab", "swift", "kotlin", "scala", "clojure", "c", "cpp"],
+        # Frameworks (check after languages)
+        "Frameworks & Libraries": ["react", "vue", "angular", "django", "flask", "express", "spring", "rails", "laravel", "framework", "library"],
         "Security": ["security", "firewall", "vpn", "ssl", "tls", "encryption", "authentication", "authorization", "jwt", "oauth", "saml", "gateway", "policy"],
         "Monitoring & Observability": ["prometheus", "grafana", "datadog", "new relic", "splunk", "elk", "monitoring", "logging", "observability", "metrics", "troubleshooting", "root-cause"],
         "Other": []  # Uncategorized skills
