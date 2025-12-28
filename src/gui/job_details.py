@@ -7,11 +7,62 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+from typing import Dict, List
 import streamlit as st
 from src.db.database import Database
 from src.matching.skill_matcher import SkillMatcher
 from src.models.skills import SkillOntology
 from src.models.resume import Resume
+
+
+def _categorize_skills(skills: List[str]) -> Dict[str, List[str]]:
+    """Categorize skills into groups for better organization.
+    
+    Returns: Dict mapping category name to list of skills
+    """
+    # Define skill categories with keywords (order matters - more specific first)
+    skill_categories = {
+        "Languages": ["python", "java", "c++", "c#", "javascript", "typescript", "go", "golang", "rust", "ruby", "php", "r", "matlab", "swift", "kotlin", "scala", "clojure", "c", "cpp"],
+        "AI/ML & HPC": ["tensorflow", "pytorch", "keras", "scikit-learn", "numpy", "pandas", "machine learning", "deep learning", "ai", "ml", "neural", "cnn", "rnn", "hpc", "high-performance", "nvidia", "gpu", "a100", "h200", "gh200", "blackwell", "hopper", "ampere", "nccl", "distributed training"],
+        "Kubernetes & Orchestration": ["kubernetes", "k8s", "rke", "kopf", "kube-ovn", "kubevirt", "operator", "cncf", "helm"],
+        "Cloud & Infrastructure": ["aws", "azure", "gcp", "cloud", "infrastructure", "iaas", "paas", "saas", "cloudformation"],
+        "DevOps & CI/CD": ["devops", "ci/cd", "jenkins", "gitlab", "github actions", "circleci", "travis", "bamboo", "pipeline", "deployment", "automation", "terraform", "ansible"],
+        "Networking": ["tcp/ip", "http", "https", "rest", "graphql", "api", "microservices", "network", "bgp", "evpn", "sonic", "infiniband", "rdma", "roce", "leaf", "spine", "topology", "fabric", "throughput"],
+        "Storage": ["storage", "ceph", "weka", "qumulo", "nfs", "s3", "object storage", "block storage", "file storage", "powerstore", "rook", "fabric"],
+        "Virtualization & Bare Metal": ["vmware", "esxi", "vcenter", "kvm", "xen", "virtualization", "container", "ironic", "metal3", "bare-metal", "provisioning"],
+        "Databases": ["postgresql", "mysql", "mongodb", "redis", "cassandra", "dynamodb", "elasticsearch", "sql", "nosql", "database", "db", "relational"],
+        "Operating Systems": ["linux", "ubuntu", "debian", "centos", "rhel", "windows", "os", "kernel", "system"],
+        "Frameworks & Libraries": ["react", "vue", "angular", "django", "flask", "fastapi", "express", "spring", "rails", "laravel", "framework", "library", "asyncio", "pydantic"],
+        "Hardware & Platforms": ["supermicro", "dell", "hardware", "platform", "architecture", "compute", "data center", "datacenter"],
+        "Security": ["security", "firewall", "vpn", "ssl", "tls", "encryption", "authentication", "authorization", "jwt", "oauth", "saml", "gateway", "policy"],
+        "Monitoring & Observability": ["prometheus", "grafana", "datadog", "new relic", "splunk", "elk", "monitoring", "logging", "observability", "metrics", "troubleshooting", "root-cause"],
+        "Other": []  # Uncategorized skills
+    }
+    
+    categorized = {category: [] for category in skill_categories.keys()}
+    
+    for skill in skills:
+        skill_lower = skill.lower()
+        categorized_flag = False
+        
+        # Try to match skill to a category
+        for category, keywords in skill_categories.items():
+            if category == "Other":
+                continue
+            for keyword in keywords:
+                if keyword in skill_lower or skill_lower in keyword:
+                    categorized[category].append(skill)
+                    categorized_flag = True
+                    break
+            if categorized_flag:
+                break
+        
+        # If not categorized, add to "Other"
+        if not categorized_flag:
+            categorized["Other"].append(skill)
+    
+    # Remove empty categories
+    return {cat: skills_list for cat, skills_list in categorized.items() if skills_list}
 
 
 def render_job_details(db: Database, job: dict):
@@ -28,37 +79,13 @@ def render_job_details(db: Database, job: dict):
     if job_skills:
         st.subheader("Required Skills")
         if job_skills.required_skills:
-            # Show all required skills in bullet format for better readability
-            if len(job_skills.required_skills) > 15:
-                cols = st.columns(2)
-                mid = len(job_skills.required_skills) // 2
-                with cols[0]:
-                    for skill in job_skills.required_skills[:mid]:
-                        st.write(f"• {skill}")
-                with cols[1]:
-                    for skill in job_skills.required_skills[mid:]:
-                        st.write(f"• {skill}")
-            else:
-                for skill in job_skills.required_skills:
-                    st.write(f"• {skill}")
+            _display_skills_by_category(job_skills.required_skills)
         else:
             st.write("None specified")
         
         if job_skills.preferred_skills:
             st.subheader("Preferred Skills")
-            # Show all preferred skills in bullet format
-            if len(job_skills.preferred_skills) > 15:
-                cols = st.columns(2)
-                mid = len(job_skills.preferred_skills) // 2
-                with cols[0]:
-                    for skill in job_skills.preferred_skills[:mid]:
-                        st.write(f"• {skill}")
-                with cols[1]:
-                    for skill in job_skills.preferred_skills[mid:]:
-                        st.write(f"• {skill}")
-            else:
-                for skill in job_skills.preferred_skills:
-                    st.write(f"• {skill}")
+            _display_skills_by_category(job_skills.preferred_skills)
         
         if job_skills.soft_skills:
             st.subheader("Soft Skills")
@@ -186,6 +213,44 @@ def _handle_generate_resume(db: Database, job_id: int):
                     st.write(f"- {rec}")
 
 
+def _display_skills_by_category(skills: List[str]):
+    """Display skills organized by category."""
+    categorized = _categorize_skills(skills)
+    
+    if not categorized:
+        st.write("No skills to display")
+        return
+    
+    # Display each category
+    for category, skills_list in categorized.items():
+        if category == "Other" and len(categorized) > 1:
+            # Only show "Other" if there are other categories too
+            with st.expander(f"📦 {category} ({len(skills_list)})", expanded=False):
+                for skill in skills_list:
+                    st.write(f"• {skill}")
+        else:
+            # Use expandable sections for categories with many skills
+            if len(skills_list) > 5:
+                with st.expander(f"📦 {category} ({len(skills_list)})", expanded=True):
+                    # Split into columns if many skills
+                    if len(skills_list) > 10:
+                        cols = st.columns(2)
+                        mid = len(skills_list) // 2
+                        with cols[0]:
+                            for skill in skills_list[:mid]:
+                                st.write(f"• {skill}")
+                        with cols[1]:
+                            for skill in skills_list[mid:]:
+                                st.write(f"• {skill}")
+                    else:
+                        for skill in skills_list:
+                            st.write(f"• {skill}")
+            else:
+                st.write(f"**{category}:**")
+                for skill in skills_list:
+                    st.write(f"• {skill}")
+
+
 def _handle_view_match_details(db: Database, job_id: int):
     """Handle view match details workflow."""
     # Get job and skills
@@ -236,36 +301,11 @@ def _handle_view_match_details(db: Database, job_id: int):
     
     if job_skills.required_skills:
         st.write("**Required Skills:**")
-        # Group skills by category for better readability
-        # Use expandable sections or columns for long lists
-        if len(job_skills.required_skills) > 10:
-            # Split into chunks for better readability
-            cols = st.columns(2)
-            mid = len(job_skills.required_skills) // 2
-            with cols[0]:
-                for skill in job_skills.required_skills[:mid]:
-                    st.write(f"• {skill}")
-            with cols[1]:
-                for skill in job_skills.required_skills[mid:]:
-                    st.write(f"• {skill}")
-        else:
-            for skill in job_skills.required_skills:
-                st.write(f"• {skill}")
+        _display_skills_by_category(job_skills.required_skills)
     
     if job_skills.preferred_skills:
         st.write("**Preferred Skills:**")
-        if len(job_skills.preferred_skills) > 10:
-            cols = st.columns(2)
-            mid = len(job_skills.preferred_skills) // 2
-            with cols[0]:
-                for skill in job_skills.preferred_skills[:mid]:
-                    st.write(f"• {skill}")
-            with cols[1]:
-                for skill in job_skills.preferred_skills[mid:]:
-                    st.write(f"• {skill}")
-        else:
-            for skill in job_skills.preferred_skills:
-                st.write(f"• {skill}")
+        _display_skills_by_category(job_skills.preferred_skills)
     
     if job_skills.soft_skills:
         st.write("**Soft Skills:**")
