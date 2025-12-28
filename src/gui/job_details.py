@@ -216,7 +216,7 @@ def _handle_generate_resume(db: Database, job_id: int):
     
     if reusable:
         resume_id, reused_resume, fit_score, similarity = reusable
-        st.success(f"Found reusable resume! (ID: {resume_id}, Fit: {fit_score:.1%}, Similarity: {similarity:.1%})")
+        st.success(f"Found reusable resume! (ID: {resume_id}, Fit: {fit_score:.2%}, Similarity: {similarity:.2%})")
         
         col1, col2 = st.columns(2)
         with col1:
@@ -250,12 +250,12 @@ def _handle_generate_resume(db: Database, job_id: int):
         # Match job
         job_match = matcher.match_job(resume, job_skills)
         
-        st.info(f"Job fit score: {job_match.fit_score:.1%}")
+        st.info(f"Job fit score: {job_match.fit_score:.2%}")
         st.info("Resume rewrite workflow would start here...")
         
         # Show match details
         with st.expander("View Match Details", expanded=True):
-            st.write(f"**Fit Score:** {job_match.fit_score:.1%}")
+            st.write(f"**Fit Score:** {job_match.fit_score:.2%}")
             
             if job_match.matching_skills:
                 st.write(f"**Matching Skills ({len(job_match.matching_skills)}):**")

@@ -93,7 +93,7 @@ def render_job_list(db: Database):
                 "Fit Score",
                 min_value=0.0,
                 max_value=1.0,
-                format="%.1f%%",
+                format="%.2f%%",
             ),
             "Status": st.column_config.SelectboxColumn(
                 "Status",
