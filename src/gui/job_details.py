@@ -28,31 +28,37 @@ def render_job_details(db: Database, job: dict):
     if job_skills:
         st.subheader("Required Skills")
         if job_skills.required_skills:
-            # Show all required skills, wrap in columns if many
+            # Show all required skills in bullet format for better readability
             if len(job_skills.required_skills) > 15:
                 cols = st.columns(2)
                 mid = len(job_skills.required_skills) // 2
                 with cols[0]:
-                    st.write(", ".join(job_skills.required_skills[:mid]))
+                    for skill in job_skills.required_skills[:mid]:
+                        st.write(f"• {skill}")
                 with cols[1]:
-                    st.write(", ".join(job_skills.required_skills[mid:]))
+                    for skill in job_skills.required_skills[mid:]:
+                        st.write(f"• {skill}")
             else:
-                st.write(", ".join(job_skills.required_skills))
+                for skill in job_skills.required_skills:
+                    st.write(f"• {skill}")
         else:
             st.write("None specified")
         
         if job_skills.preferred_skills:
             st.subheader("Preferred Skills")
-            # Show all preferred skills, wrap in columns if many
+            # Show all preferred skills in bullet format
             if len(job_skills.preferred_skills) > 15:
                 cols = st.columns(2)
                 mid = len(job_skills.preferred_skills) // 2
                 with cols[0]:
-                    st.write(", ".join(job_skills.preferred_skills[:mid]))
+                    for skill in job_skills.preferred_skills[:mid]:
+                        st.write(f"• {skill}")
                 with cols[1]:
-                    st.write(", ".join(job_skills.preferred_skills[mid:]))
+                    for skill in job_skills.preferred_skills[mid:]:
+                        st.write(f"• {skill}")
             else:
-                st.write(", ".join(job_skills.preferred_skills))
+                for skill in job_skills.preferred_skills:
+                    st.write(f"• {skill}")
         
         if job_skills.soft_skills:
             st.subheader("Soft Skills")
