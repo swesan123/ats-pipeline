@@ -23,30 +23,55 @@ def _extract_job_info_from_text(text: str) -> tuple[str, str]:
     title = "Unknown"
     company = "Unknown"
     
-    # Pattern 1: "Title at Company" or "Title at Company ·"
-    match = re.search(r'^([^·\n]+?)\s+at\s+([^·\n]+?)(?:\s*·|$)', text, re.IGNORECASE | re.MULTILINE)
+    # Clean up text - remove extra whitespace but preserve structure
+    lines = [line.strip() for line in text.split('\n') if line.strip()]
+    text_clean = ' '.join(text.split())
+    
+    # Pattern 1: "Title at Company" (most common LinkedIn format)
+    # Look for patterns like "AI Platform Engineer at Denvr" anywhere in text
+    # This is the most reliable pattern
+    match = re.search(r'([A-Z][a-zA-Z\s&]{5,50}?(?:Engineer|Developer|Manager|Analyst|Architect|Scientist|Specialist|Consultant|Lead|Director|VP|President|Designer|Coordinator))\s+at\s+([A-Z][a-zA-Z\s&]{2,40}?)(?:\s+·|\s*$|\n|Toronto|New York|\(Hybrid\)|\(Remote\)|Show)', text_clean, re.IGNORECASE)
     if match:
         title = match.group(1).strip()
         company = match.group(2).strip()
-        return title, company
+        # Clean up company name (remove location and other text if captured)
+        company = re.sub(r'\s+(Toronto|New York|Hybrid|Remote|Show|Apply|Save).*$', '', company, flags=re.IGNORECASE).strip()
+        # Clean up title (remove "Save Save" or other artifacts)
+        title = re.sub(r'^(Save\s+)+', '', title, flags=re.IGNORECASE).strip()
+        if title and company and company != "Unknown":
+            return title, company
     
-    # Pattern 2: "Company · Title" format
-    match = re.search(r'^([^·\n]+?)\s+·\s+([^·\n]+?)(?:\s*·|$)', text, re.IGNORECASE | re.MULTILINE)
+    # Pattern 2: Look for "at [Company]" anywhere in text and extract preceding title
+    match = re.search(r'([A-Z][a-zA-Z\s&]{5,50}?)\s+at\s+([A-Z][a-zA-Z\s&]{2,40}?)(?:\s+·|\s*$|\n|Toronto|New York|\(Hybrid\)|\(Remote\)|Show)', text_clean, re.IGNORECASE)
     if match:
-        company = match.group(1).strip()
-        title = match.group(2).strip()
-        return title, company
+        potential_title = match.group(1).strip()
+        company = match.group(2).strip()
+        # Clean up
+        company = re.sub(r'\s+(Toronto|New York|Hybrid|Remote|Show|Apply|Save).*$', '', company, flags=re.IGNORECASE).strip()
+        potential_title = re.sub(r'^(Save\s+)+', '', potential_title, flags=re.IGNORECASE).strip()
+        # Only use if it looks like a job title (has common keywords or is reasonable length)
+        if len(potential_title) > 5 and len(potential_title) < 60:
+            title = potential_title
+            if company and company != "Unknown":
+                return title, company
     
-    # Pattern 3: Look for "About the job" or "Who We Are" sections - extract from context
-    # Try to find company name after "at [Company]" patterns
-    match = re.search(r'at\s+([A-Z][a-zA-Z\s&]+?)(?:\s+·|\s*$|\n)', text, re.IGNORECASE)
-    if match:
-        company = match.group(1).strip()
-    
-    # Try to find title - look for common patterns like "AI Platform Engineer" at start
-    title_match = re.search(r'^([A-Z][a-zA-Z\s]+Engineer|[A-Z][a-zA-Z\s]+Developer|[A-Z][a-zA-Z\s]+Manager)', text, re.IGNORECASE)
+    # Pattern 3: Extract title from beginning - look for common job title patterns
+    title_match = re.search(r'^([A-Z][a-zA-Z\s&]{5,50}?(?:Engineer|Developer|Manager|Analyst|Architect|Scientist|Specialist|Consultant|Lead|Director|VP|President|Designer|Coordinator))', text_clean, re.IGNORECASE)
     if title_match:
         title = title_match.group(1).strip()
+        # Remove location if it's part of the title
+        title = re.sub(r'\s+Toronto.*$', '', title, flags=re.IGNORECASE).strip()
+        title = re.sub(r'\s+\d+\s+weeks?\s+ago.*$', '', title, flags=re.IGNORECASE).strip()
+    
+    # Pattern 4: Look for company in "About the job" or "Who We Are" sections
+    if company == "Unknown":
+        # Try to find company name in context like "Denvr is a..." or "At Denvr, we..."
+        company_match = re.search(r'(?:^|\.|Who We Are)\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)\s+(?:is|are|provides|offers|designs|has)', text_clean, re.IGNORECASE)
+        if company_match:
+            potential_company = company_match.group(1).strip()
+            # Filter out common false positives
+            if potential_company not in ['We', 'The', 'This', 'Our', 'They', 'These', 'Who'] and len(potential_company) < 30:
+                company = potential_company
     
     return title, company
 
