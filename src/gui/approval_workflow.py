@@ -34,7 +34,7 @@ def render_approval_workflow(
     st.write(original.text)
     
     # Display reasoning chain (expandable)
-    with st.expander("📋 Reasoning Chain", expanded=False):
+    with st.expander("Reasoning Chain", expanded=False):
         st.write("**Problem Identification:**")
         st.write(reasoning.problem_identification)
         
@@ -78,15 +78,15 @@ def render_approval_workflow(
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("✅ Approve", type="primary"):
+        if st.button("Approve", type="primary"):
             return True, selected_variation
     
     with col2:
-        if st.button("❌ Reject"):
+        if st.button("Reject"):
             return False, None
     
     with col3:
-        if st.button("🔄 Regenerate"):
+        if st.button("Regenerate"):
             feedback = st.text_input("Enter feedback for regeneration:")
             if feedback:
                 st.info("Regeneration would happen here with feedback")

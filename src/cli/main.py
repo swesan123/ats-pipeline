@@ -44,9 +44,9 @@ def convert_latex(input_tex):
         with open(output_json, 'w', encoding='utf-8') as f:
             json.dump(resume.model_dump(), f, indent=2, default=str)
         
-        click.echo(f"✓ Successfully converted {input_tex} to {output_json}")
+        click.echo(f"Successfully converted {input_tex} to {output_json}")
     except Exception as e:
-        click.echo(f"✗ Error: {e}", err=True)
+        click.echo(f"Error: {e}", err=True)
         import traceback
         traceback.print_exc()
         sys.exit(1)
@@ -116,12 +116,12 @@ def extract_skills(job_input, use_playwright):
         with open(output_json, 'w', encoding='utf-8') as f:
             json.dump(job_output, f, indent=2, default=str)
         
-        click.echo(f"✓ Successfully extracted skills to {output_json}")
+        click.echo(f"Successfully extracted skills to {output_json}")
         click.echo(f"  Required: {len(job_skills.required_skills)} skills")
         click.echo(f"  Preferred: {len(job_skills.preferred_skills)} skills")
         click.echo(f"  Soft: {len(job_skills.soft_skills)} skills")
     except Exception as e:
-        click.echo(f"✗ Error: {e}", err=True)
+        click.echo(f"Error: {e}", err=True)
         import traceback
         traceback.print_exc()
         sys.exit(1)
@@ -180,24 +180,24 @@ def match_job(resume_json, job_json, ontology):
         click.echo(f"\nFit Score: {job_match.fit_score:.1%}")
         click.echo(f"\nMatching Skills ({len(job_match.matching_skills)}):")
         for skill in job_match.matching_skills[:10]:
-            click.echo(f"  ✓ {skill}")
+            click.echo(f"  - {skill}")
         
         if job_match.skill_gaps.get("required_missing"):
             click.echo(f"\nMissing Required Skills ({len(job_match.skill_gaps['required_missing'])}):")
             for skill in job_match.skill_gaps["required_missing"][:10]:
-                click.echo(f"  ✗ {skill}")
+                click.echo(f"  - {skill}")
         
         if job_match.missing_skills:
             click.echo(f"\nSkills Not in Resume ({len(job_match.missing_skills)}):")
             for skill in job_match.missing_skills[:10]:
-                click.echo(f"  ⚠ {skill}")
+                click.echo(f"  - {skill}")
         
         click.echo(f"\nRecommendations:")
         for rec in job_match.recommendations:
             click.echo(f"  • {rec}")
         click.echo()
     except Exception as e:
-        click.echo(f"✗ Error: {e}", err=True)
+        click.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
 
@@ -281,7 +281,7 @@ def rewrite_resume(resume_json, job_json, ontology, user_skills, reuse_threshold
                     if choice == 'y':
                         with open(output_path, 'w', encoding='utf-8') as f:
                             json.dump(reused_resume.model_dump(), f, indent=2, default=str)
-                        click.echo(f"✓ Reused resume saved to {output_path}")
+                        click.echo(f"Reused resume saved to {output_path}")
                         return
             except Exception as e:
                 # If reuse check fails, continue with normal flow
@@ -341,9 +341,9 @@ def rewrite_resume(resume_json, job_json, ontology, user_skills, reuse_threshold
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(updated_resume.model_dump(), f, indent=2, default=str)
         
-        click.echo(f"✓ Updated resume saved to {output_path}")
+        click.echo(f"Updated resume saved to {output_path}")
     except Exception as e:
-        click.echo(f"✗ Error: {e}", err=True)
+        click.echo(f"Error: {e}", err=True)
         import traceback
         traceback.print_exc()
         sys.exit(1)
@@ -372,16 +372,16 @@ def add_project(resume_json, name):
                 click.echo(f"✗ Error: Project '{name}' not found in resume", err=True)
                 sys.exit(1)
             library.add_project(project)
-            click.echo(f"✓ Added project '{project.name}' to library")
+            click.echo(f"Added project '{project.name}' to library")
         else:
             # Add all projects from resume
             added_count = 0
             for project in resume.projects:
                 library.add_project(project)
                 added_count += 1
-            click.echo(f"✓ Added {added_count} project(s) to library")
+            click.echo(f"Added {added_count} project(s) to library")
     except Exception as e:
-        click.echo(f"✗ Error: {e}", err=True)
+        click.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
 
@@ -404,7 +404,7 @@ def list_projects():
             click.echo(f"   Bullets: {len(project.bullets)}")
             click.echo()
     except Exception as e:
-        click.echo(f"✗ Error: {e}", err=True)
+        click.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
 
@@ -415,12 +415,12 @@ def remove_project(name):
     try:
         library = ProjectLibrary()
         if library.remove_project(name):
-            click.echo(f"✓ Removed project '{name}' from library")
+            click.echo(f"Removed project '{name}' from library")
         else:
             click.echo(f"✗ Error: Project '{name}' not found in library", err=True)
             sys.exit(1)
     except Exception as e:
-        click.echo(f"✗ Error: {e}", err=True)
+        click.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
 
@@ -467,9 +467,9 @@ def select_projects(job_json, max_projects, min_score, output):
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump([p.model_dump() for p in selected], f, indent=2, default=str)
-        click.echo(f"\n✓ Saved selected projects to {output_path}")
+        click.echo(f"\nSaved selected projects to {output_path}")
     except Exception as e:
-        click.echo(f"✗ Error: {e}", err=True)
+        click.echo(f"Error: {e}", err=True)
         import traceback
         traceback.print_exc()
         sys.exit(1)
@@ -528,7 +528,7 @@ def apply(job_url, resume_json, user_skills, skip_match, use_playwright, reuse_t
         with open(job_skills_path, 'w', encoding='utf-8') as f:
             json.dump(job_output, f, indent=2, default=str)
         
-        click.echo(f"✓ Skills extracted to {job_skills_path}")
+        click.echo(f"Skills extracted to {job_skills_path}")
         click.echo(f"  Required: {len(job_skills.required_skills)} skills")
         click.echo(f"  Preferred: {len(job_skills.preferred_skills)} skills")
         click.echo()
@@ -566,7 +566,7 @@ def apply(job_url, resume_json, user_skills, skip_match, use_playwright, reuse_t
                 user_skills_obj = UserSkills.model_validate(user_skills_data)
                 click.echo(f"  Using {len(user_skills_obj.skills)} user-provided skills (prevents fabrication)")
         elif user_skills:
-            click.echo(f"  ⚠ Warning: User skills file not found: {user_skills}", err=True)
+            click.echo(f"  Warning: User skills file not found: {user_skills}", err=True)
         
         # Call rewrite_resume logic (reuse existing function)
         resume_path = Path(resume_json)
@@ -613,7 +613,7 @@ def apply(job_url, resume_json, user_skills, skip_match, use_playwright, reuse_t
         with open(resume_updated_path, 'w', encoding='utf-8') as f:
             json.dump(resume.model_dump(), f, indent=2, default=str)
         
-        click.echo(f"✓ Updated resume saved to {resume_updated_path}")
+        click.echo(f"Updated resume saved to {resume_updated_path}")
         click.echo()
         
         # Step 4: Render PDF
@@ -621,10 +621,10 @@ def apply(job_url, resume_json, user_skills, skip_match, use_playwright, reuse_t
         renderer = LaTeXRenderer()
         pdf_path = renderer.render_pdf(resume, pdf_path)
         
-        click.echo(f"✓ PDF generated: {pdf_path}")
+        click.echo(f"PDF generated: {pdf_path}")
         click.echo()
         click.echo(f"{'='*80}")
-        click.echo("✓ APPLICATION FLOW COMPLETE")
+        click.echo("APPLICATION FLOW COMPLETE")
         click.echo(f"{'='*80}")
         click.echo(f"\nOutput files:")
         click.echo(f"  - Job skills: {job_skills_path}")
@@ -632,7 +632,7 @@ def apply(job_url, resume_json, user_skills, skip_match, use_playwright, reuse_t
         click.echo(f"  - PDF: {pdf_path}")
         
     except Exception as e:
-        click.echo(f"✗ Error: {e}", err=True)
+        click.echo(f"Error: {e}", err=True)
         import traceback
         traceback.print_exc()
         sys.exit(1)
@@ -661,9 +661,9 @@ def render_pdf(resume_json):
         renderer = LaTeXRenderer()
         pdf_path = renderer.render_pdf(resume, output_path)
         
-        click.echo(f"✓ Successfully generated PDF: {pdf_path}")
+        click.echo(f"Successfully generated PDF: {pdf_path}")
     except Exception as e:
-        click.echo(f"✗ Error: {e}", err=True)
+        click.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
 

@@ -20,7 +20,7 @@ def create_issue(owner, repo, title, body, labels):
     """Create GitHub issue."""
     workflow = GitHubWorkflow(owner, repo)
     issue_number = workflow.create_issue(title, body, list(labels) if labels else None)
-    click.echo(f"✓ Created issue #{issue_number}")
+    click.echo(f"Created issue #{issue_number}")
 
 
 @github_cli.command()
@@ -33,7 +33,7 @@ def create_branch(owner, repo, issue_number, feature_name, from_branch):
     """Create feature branch from issue."""
     workflow = GitHubWorkflow(owner, repo)
     branch_name = workflow.create_feature_branch(issue_number, feature_name, from_branch)
-    click.echo(f"✓ Created branch: {branch_name}")
+    click.echo(f"Created branch: {branch_name}")
 
 
 @github_cli.command()
@@ -48,7 +48,7 @@ def create_pr(owner, repo, branch, base, issue, title, body):
     """Create pull request."""
     workflow = GitHubWorkflow(owner, repo)
     pr_number = workflow.create_pull_request(branch, base, title, body, issue)
-    click.echo(f"✓ Created PR #{pr_number}")
+    click.echo(f"Created PR #{pr_number}")
 
 
 @github_cli.command()
@@ -61,7 +61,7 @@ def merge_pr(owner, repo, pr_number, method):
     workflow = GitHubWorkflow(owner, repo)
     success = workflow.merge_pull_request(pr_number, method)
     if success:
-        click.echo(f"✓ Merged PR #{pr_number}")
+        click.echo(f"Merged PR #{pr_number}")
     else:
         click.echo(f"✗ Failed to merge PR #{pr_number}", err=True)
 

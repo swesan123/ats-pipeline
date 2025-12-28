@@ -107,13 +107,13 @@ def _display_skills_by_category(skills: List[str]):
     for category, skills_list in categorized.items():
         if category == "Other" and len(categorized) > 1:
             # Only show "Other" if there are other categories too
-            with st.expander(f"📦 {category} ({len(skills_list)})", expanded=False):
+            with st.expander(f"{category} ({len(skills_list)})", expanded=False):
                 for skill in skills_list:
                     st.write(f"• {skill}")
         else:
             # Use expandable sections for categories with many skills
             if len(skills_list) > 5:
-                with st.expander(f"📦 {category} ({len(skills_list)})", expanded=True):
+                with st.expander(f"{category} ({len(skills_list)})", expanded=True):
                     # Split into columns if many skills
                     if len(skills_list) > 10:
                         cols = st.columns(2)
@@ -163,17 +163,17 @@ def render_job_details(db: Database, job: dict):
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("🎯 Generate Resume", type="primary"):
+        if st.button("Generate Resume", type="primary"):
             st.session_state['generate_resume_job_id'] = job['id']
             st.rerun()
     
     with col2:
-        if st.button("📊 View Match Details"):
+        if st.button("View Match Details"):
             st.session_state['view_match_job_id'] = job['id']
             st.rerun()
     
     with col3:
-        if st.button("📝 Generate Cover Letter"):
+        if st.button("Generate Cover Letter"):
             st.info("Cover letter generation coming soon (P1)")
     
     # Handle generate resume action
@@ -220,11 +220,11 @@ def _handle_generate_resume(db: Database, job_id: int):
         
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("✅ Use Existing Resume", type="primary"):
+            if st.button("Use Existing Resume", type="primary"):
                 st.session_state['selected_resume_id'] = resume_id
                 st.rerun()
         with col2:
-            if st.button("🔄 Generate New Resume"):
+            if st.button("Generate New Resume"):
                 st.session_state['generate_new'] = True
                 st.rerun()
     else:
@@ -254,7 +254,7 @@ def _handle_generate_resume(db: Database, job_id: int):
         st.info("Resume rewrite workflow would start here...")
         
         # Show match details
-        with st.expander("📊 View Match Details", expanded=True):
+        with st.expander("View Match Details", expanded=True):
             st.write(f"**Fit Score:** {job_match.fit_score:.1%}")
             
             if job_match.matching_skills:
@@ -318,7 +318,7 @@ def _handle_view_match_details(db: Database, job_id: int):
     job_match = matcher.match_job(resume, job_skills)
     
     # Display match details
-    st.subheader("📊 Match Details")
+    st.subheader("Match Details")
     st.write(f"**Job:** {job.title} at {job.company}")
     if job.location:
         st.write(f"**Location:** {job.location}")
@@ -327,7 +327,7 @@ def _handle_view_match_details(db: Database, job_id: int):
     st.divider()
     
     # Display job requirements in organized format
-    st.subheader("📋 Job Requirements")
+    st.subheader("Job Requirements")
     
     if job_skills.required_skills:
         st.write("**Required Skills:**")
@@ -344,17 +344,17 @@ def _handle_view_match_details(db: Database, job_id: int):
     st.divider()
     
     if job_match.matching_skills:
-        st.subheader(f"✅ Matching Skills ({len(job_match.matching_skills)})")
+        st.subheader(f"Matching Skills ({len(job_match.matching_skills)})")
         # Display in columns if many
         if len(job_match.matching_skills) > 20:
             cols = st.columns(2)
             mid = len(job_match.matching_skills) // 2
             with cols[0]:
                 for skill in job_match.matching_skills[:mid]:
-                    st.write(f"✓ {skill}")
+                    st.write(f"- {skill}")
             with cols[1]:
                 for skill in job_match.matching_skills[mid:]:
-                    st.write(f"✓ {skill}")
+                    st.write(f"- {skill}")
         else:
             for skill in job_match.matching_skills:
                 st.write(f"✓ {skill}")
@@ -362,17 +362,17 @@ def _handle_view_match_details(db: Database, job_id: int):
     st.divider()
     
     if job_match.skill_gaps.get("required_missing"):
-        st.subheader(f"❌ Missing Required Skills ({len(job_match.skill_gaps['required_missing'])})")
+        st.subheader(f"Missing Required Skills ({len(job_match.skill_gaps['required_missing'])})")
         for skill in job_match.skill_gaps["required_missing"]:
-            st.write(f"✗ {skill}")
+            st.write(f"- {skill}")
     
     if job_match.skill_gaps.get("preferred_missing"):
-        st.subheader(f"⚠️ Missing Preferred Skills ({len(job_match.skill_gaps['preferred_missing'])})")
+        st.subheader(f"Missing Preferred Skills ({len(job_match.skill_gaps['preferred_missing'])})")
         for skill in job_match.skill_gaps["preferred_missing"]:
-            st.write(f"⚠ {skill}")
+            st.write(f"- {skill}")
     
     if job_match.missing_skills:
-        st.subheader(f"🔍 Skills Not in Resume ({len(job_match.missing_skills)})")
+        st.subheader(f"Skills Not in Resume ({len(job_match.missing_skills)})")
         st.write("These skills are required/preferred but not found in your resume:")
         for skill in job_match.missing_skills:
             st.write(f"• {skill}")
@@ -380,7 +380,7 @@ def _handle_view_match_details(db: Database, job_id: int):
     st.divider()
     
     if job_match.recommendations:
-        st.subheader("💡 Recommendations")
+        st.subheader("Recommendations")
         for rec in job_match.recommendations:
             st.write(f"• {rec}")
 

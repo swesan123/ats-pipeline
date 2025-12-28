@@ -18,11 +18,11 @@ def main():
     """Main Streamlit application."""
     st.set_page_config(
         page_title="ATS Pipeline - Job Manager",
-        page_icon="📄",
+        page_icon=None,
         layout="wide",
     )
     
-    st.title("📄 ATS Pipeline - Job Application Manager")
+    st.title("ATS Pipeline - Job Application Manager")
     
     # Initialize database
     if 'db' not in st.session_state:
@@ -40,9 +40,9 @@ def main():
         render_job_input(st.session_state.db)
         
         st.header("Quick Actions")
-        if st.button("🔄 Refresh Jobs"):
+        if st.button("Refresh Jobs"):
             st.rerun()
-        if st.button("⚙️ Settings"):
+        if st.button("Settings"):
             st.info("Settings panel coming soon")
     
     with col2:

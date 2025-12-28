@@ -143,7 +143,7 @@ def render_job_input(db: Database):
                 # Save to database
                 job_id = db.save_job(job_posting, job_skills)
                 
-                st.success(f"✓ Job added successfully! (ID: {job_id})")
+                st.success(f"Job added successfully! (ID: {job_id})")
                 st.rerun()
             except Exception as e:
                 st.error(f"Error adding job: {e}")
@@ -167,7 +167,7 @@ def render_job_input(db: Database):
                     extractor = JobSkillExtractor()
                     job_skills = extractor.extract_skills(job_posting)
                     job_id = db.save_job(job_posting, job_skills)
-                    st.success(f"✓ Job added from file! (ID: {job_id})")
+                    st.success(f"Job added from file! (ID: {job_id})")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Error: {e}")
