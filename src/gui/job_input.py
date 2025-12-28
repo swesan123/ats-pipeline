@@ -35,8 +35,8 @@ def _extract_job_info_from_text(text: str) -> tuple[str, str]:
     # Pattern 1: "Title at Company" (most common LinkedIn format)
     # Find all occurrences of "at [Company]" and extract the preceding title
     # Look for the pattern: (Title) + "at" + (Company)
-    # Company should be 1-3 words max, stop at common delimiters
-    matches = list(re.finditer(r'\s+at\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)(?:\s+·|\s*$|\n|Toronto|New York|\(Hybrid\)|\(Remote\)|Show|AI Platform|Engineer|Developer)', text_clean, re.IGNORECASE))
+    # Company should be 1-2 words max
+    matches = list(re.finditer(r'\s+at\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)\s*(?:·|$|\n|Toronto|New York|\(Hybrid\)|\(Remote\)|Show|AI|Engineer|Developer)', text_clean, re.IGNORECASE))
     for match in matches:
         # Get text before "at"
         start_pos = match.start()
@@ -45,27 +45,19 @@ def _extract_job_info_from_text(text: str) -> tuple[str, str]:
         title_match = re.search(r'([A-Z][a-zA-Z\s&]{5,50}?(?:Engineer|Developer|Manager|Analyst|Architect|Scientist|Specialist|Consultant|Lead|Director|VP|President|Designer|Coordinator))\s+at\s*$', before_at, re.IGNORECASE)
         if title_match:
             potential_title = title_match.group(1).strip()
-            company_raw = match.group(1).strip()
-            # Clean up company - take only the first word/phrase (company name)
-            # Stop at common delimiters or if it contains the title (which means it captured too much)
-            company = company_raw
-            # Remove location and other text
+            company = match.group(1).strip()
+            # Clean up - remove any trailing artifacts
             company = re.sub(r'\s+(Toronto|New York|Hybrid|Remote|Show|Apply|Save).*$', '', company, flags=re.IGNORECASE).strip()
-            # If company contains the title, it means we captured too much - just take first word
-            if potential_title.lower() in company.lower():
-                # Extract just the company name (first word or two)
-                company_match = re.match(r'^([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)', company)
-                if company_match:
-                    company = company_match.group(1).strip()
             # Remove duplicate words in company
             words = company.split()
             if len(words) > 1 and words[0] == words[-1]:
                 company = words[0]
-            # Validate
+            # Validate - company should not contain the title
             if (potential_title and company and company != "Unknown" and 
-                len(company) < 50 and len(potential_title) > 5 and 
+                len(company) < 30 and len(potential_title) > 5 and 
                 not potential_title.lower().startswith(('save', 'apply')) and
-                potential_title.lower() not in company.lower()):
+                potential_title.lower() not in company.lower() and
+                company.lower() not in potential_title.lower()):
                 return potential_title, company
     
     # Pattern 2: Look for "at [Company]" anywhere in text and extract preceding title
