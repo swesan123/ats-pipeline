@@ -27,7 +27,8 @@ def _categorize_skills(skills: List[str]) -> Dict[str, List[str]]:
         "Kubernetes & Orchestration": ["kubernetes", "k8s", "rke", "kopf", "kube-ovn", "kubevirt", "operator", "cncf", "helm"],
         "Cloud & Infrastructure": ["aws", "azure", "gcp", "cloud", "infrastructure", "iaas", "paas", "saas", "cloudformation"],
         "DevOps & CI/CD": ["devops", "ci/cd", "jenkins", "gitlab", "github actions", "circleci", "travis", "bamboo", "pipeline", "deployment", "automation", "terraform", "ansible"],
-        "Networking": ["tcp/ip", "http", "https", "rest", "graphql", "api", "microservices", "network", "bgp", "evpn", "sonic", "infiniband", "rdma", "roce", "leaf", "spine", "topology", "fabric", "throughput"],
+        "Networking": ["tcp/ip", "http", "https", "network", "bgp", "evpn", "sonic", "infiniband", "rdma", "roce", "leaf", "spine", "topology", "fabric", "throughput", "network fabric"],
+        "APIs & Microservices": ["rest", "graphql", "api", "microservices", "backend", "backend api"],
         "Storage": ["storage", "ceph", "weka", "qumulo", "nfs", "s3", "object storage", "block storage", "file storage", "powerstore", "rook", "fabric"],
         "Virtualization & Bare Metal": ["vmware", "esxi", "vcenter", "kvm", "xen", "virtualization", "container", "ironic", "metal3", "bare-metal", "provisioning"],
         "Databases": ["postgresql", "mysql", "mongodb", "redis", "cassandra", "dynamodb", "elasticsearch", "sql", "nosql", "database", "db", "relational"],
@@ -45,12 +46,17 @@ def _categorize_skills(skills: List[str]) -> Dict[str, List[str]]:
         skill_lower = skill.lower()
         categorized_flag = False
         
-        # Try to match skill to a category
+        # Try to match skill to a category (check more specific categories first)
+        # Order: check exact matches and specific terms first
         for category, keywords in skill_categories.items():
             if category == "Other":
                 continue
             for keyword in keywords:
-                if keyword in skill_lower or skill_lower in keyword:
+                # Check for exact word match or if keyword is contained in skill
+                if (keyword in skill_lower or 
+                    skill_lower in keyword or
+                    any(word == keyword for word in skill_lower.split()) or
+                    any(keyword in word for word in skill_lower.split())):
                     categorized[category].append(skill)
                     categorized_flag = True
                     break
