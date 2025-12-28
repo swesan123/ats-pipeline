@@ -109,23 +109,45 @@ def render_job_list(db: Database):
     # Add status editor below table for selected row
     if selected_rows.selection.rows:
         selected_idx = selected_rows.selection.rows[0]
-        selected_job_id = df.iloc[selected_idx]['id']
-        current_status = df.iloc[selected_idx]['Status']
+        selected_job_id = int(df.iloc[selected_idx]['id'])
+        current_status = str(df.iloc[selected_idx]['Status'])
+        
+        st.divider()
+        st.write(f"**Selected Job:** {df.iloc[selected_idx]['company']} - {df.iloc[selected_idx]['title']}")
         
         col1, col2 = st.columns([2, 1])
         with col1:
+            # Get current status index, default to 0 if not found
+            try:
+                current_index = status_options.index(current_status)
+            except ValueError:
+                current_index = 0
+            
             new_status = st.selectbox(
-                f"Change status for {df.iloc[selected_idx]['company']} - {df.iloc[selected_idx]['title']}",
+                "Change Status",
                 options=status_options,
-                index=status_options.index(current_status) if current_status in status_options else 0,
+                index=current_index,
                 key=f"status_select_{selected_job_id}",
             )
         with col2:
-            if st.button("Update Status", key=f"update_status_{selected_job_id}"):
+            st.write("")  # Spacing
+            st.write("")  # Spacing
+            update_button = st.button("Update Status", key=f"update_status_{selected_job_id}", type="primary")
+        
+        # Handle status update
+        if update_button:
+            try:
                 if new_status != current_status:
                     db.update_job_status(selected_job_id, new_status)
-                    st.success(f"Updated status to: {new_status}")
+                    st.success(f"✓ Status updated to: **{new_status}**")
+                    # Force rerun to refresh the table
                     st.rerun()
+                else:
+                    st.info("Status is already set to this value")
+            except Exception as e:
+                st.error(f"Error updating status: {e}")
+                import traceback
+                st.exception(e)
     
     # Get selected job
     if selected_rows.selection.rows:
