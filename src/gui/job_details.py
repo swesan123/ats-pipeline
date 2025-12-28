@@ -27,13 +27,13 @@ def _categorize_skills(skills: List[str]) -> Dict[str, List[str]]:
         "Kubernetes & Orchestration": ["kubernetes", "k8s", "rke", "kopf", "kube-ovn", "kubevirt", "operator", "cncf", "helm"],
         "Cloud & Infrastructure": ["aws", "azure", "gcp", "cloud", "infrastructure", "iaas", "paas", "saas", "cloudformation"],
         "DevOps & CI/CD": ["devops", "ci/cd", "jenkins", "gitlab", "github actions", "circleci", "travis", "bamboo", "pipeline", "deployment", "automation", "terraform", "ansible"],
-        "Networking": ["tcp/ip", "http", "https", "network", "bgp", "evpn", "sonic", "infiniband", "rdma", "roce", "leaf", "spine", "topology", "fabric", "throughput", "network fabric"],
-        "APIs & Microservices": ["rest", "graphql", "api", "microservices", "backend", "backend api"],
+        "Networking": ["bgp", "evpn", "sonic", "infiniband", "rdma", "roce", "leaf/spine", "topology", "network fabric", "throughput", "tcp/ip"],
+        "APIs & Microservices": ["fastapi", "rest", "graphql", "api", "microservices", "backend api", "asyncio", "pydantic"],
         "Storage": ["storage", "ceph", "weka", "qumulo", "nfs", "s3", "object storage", "block storage", "file storage", "powerstore", "rook", "fabric"],
         "Virtualization & Bare Metal": ["vmware", "esxi", "vcenter", "kvm", "xen", "virtualization", "container", "ironic", "metal3", "bare-metal", "provisioning"],
         "Databases": ["postgresql", "mysql", "mongodb", "redis", "cassandra", "dynamodb", "elasticsearch", "sql", "nosql", "database", "db", "relational"],
-        "Operating Systems": ["linux", "ubuntu", "debian", "centos", "rhel", "windows", "os", "kernel", "system"],
-        "Frameworks & Libraries": ["react", "vue", "angular", "django", "flask", "fastapi", "express", "spring", "rails", "laravel", "framework", "library", "asyncio", "pydantic"],
+        "Operating Systems": ["ubuntu", "debian", "centos", "rhel", "windows", "linux", "os management", "kernel", "system"],
+        "Frameworks & Libraries": ["react", "vue", "angular", "django", "flask", "express", "spring", "rails", "laravel", "framework", "library"],
         "Hardware & Platforms": ["supermicro", "dell", "hardware", "platform", "architecture", "compute", "data center", "datacenter"],
         "Security": ["security", "firewall", "vpn", "ssl", "tls", "encryption", "authentication", "authorization", "jwt", "oauth", "saml", "gateway", "policy"],
         "Monitoring & Observability": ["prometheus", "grafana", "datadog", "new relic", "splunk", "elk", "monitoring", "logging", "observability", "metrics", "troubleshooting", "root-cause"],
@@ -47,16 +47,27 @@ def _categorize_skills(skills: List[str]) -> Dict[str, List[str]]:
         categorized_flag = False
         
         # Try to match skill to a category (check more specific categories first)
-        # Order: check exact matches and specific terms first
-        for category, keywords in skill_categories.items():
+        for category, patterns in skill_categories.items():
             if category == "Other":
                 continue
+            
+            keywords = patterns["keywords"]
+            exclude = patterns.get("exclude", [])
+            
+            # Skip if skill contains excluded terms (unless it's a very specific match)
+            if exclude and any(exc in skill_lower for exc in exclude):
+                # Only skip if it's a generic match, not a specific one
+                has_specific_match = any(kw == skill_lower or kw in skill_lower.split() for kw in keywords)
+                if not has_specific_match:
+                    continue
+            
             for keyword in keywords:
+                keyword_lower = keyword.lower()
                 # Check for exact word match or if keyword is contained in skill
-                if (keyword in skill_lower or 
-                    skill_lower in keyword or
-                    any(word == keyword for word in skill_lower.split()) or
-                    any(keyword in word for word in skill_lower.split())):
+                if (keyword_lower == skill_lower or
+                    keyword_lower in skill_lower or
+                    any(word == keyword_lower for word in skill_lower.split()) or
+                    any(keyword_lower in word for word in skill_lower.split())):
                     categorized[category].append(skill)
                     categorized_flag = True
                     break
