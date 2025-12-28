@@ -18,6 +18,9 @@ End-to-end job application pipeline with skill matching, explainable resume comp
 - **Resume Reuse System**: Automatically detect and reuse resumes from similar jobs
 - **Streamlit GUI**: Visual job management interface
 - **Database Persistence**: SQLite database for tracking jobs, matches, and changes
+- **Google Sheets Sync**: One-way sync from Google Sheets to database for job tracking
+- **Resume Organization**: Organized resume storage with date-based folders and human-readable filenames
+- **Resume Preview**: PDF preview and download in GUI
 
 ## Prerequisites
 
@@ -364,6 +367,28 @@ ats render-pdf [--resume-json <path>]
 Options:
 - `--resume-json`: Resume JSON file (default: `data/resume_updated.json`)
 
+### `sync-sheet`
+Sync jobs from Google Sheets to database. See [Google Sheets Sync](#google-sheets-sync) section for detailed setup instructions.
+
+```bash
+ats sync-sheet --credentials <path> --spreadsheet-id <id> [--sheet-name <name>] [--dry-run]
+```
+
+Options:
+- `--credentials`: Path to Google service account JSON file (required)
+- `--spreadsheet-id`: Google Sheets spreadsheet ID (required)
+- `--sheet-name`: Name of the sheet to sync from (default: "Sheet1")
+- `--dry-run`: Preview changes without applying them
+
+Examples:
+```bash
+# Preview changes
+ats sync-sheet --credentials credentials.json --spreadsheet-id 1abc123def456 --dry-run
+
+# Sync data
+ats sync-sheet --credentials credentials.json --spreadsheet-id 1abc123def456
+```
+
 ### Project Management Commands
 
 #### `add-project`
@@ -463,11 +488,124 @@ ats-pipeline/
 The application uses SQLite for data persistence. The database file (`ats_pipeline.db`) is created automatically on first use.
 
 **Tables:**
-- `resumes`: Versioned resume JSON snapshots
-- `jobs`: Job postings with extracted skills
+- `resumes`: Versioned resume JSON snapshots with file paths and job associations
+- `jobs`: Job postings with extracted skills and status tracking
 - `job_matches`: Fit scores and gap analysis
 - `bullet_changes`: Approval history with reasoning
 - `applications`: Application tracking
+- `contacts`: Contact information for job applications
+
+## Google Sheets Sync
+
+Sync your job tracking spreadsheet from Google Sheets to the database. This allows you to maintain your job applications in Google Sheets and automatically sync them to the ATS pipeline.
+
+### Setup
+
+1. **Create a Google Service Account:**
+   - Go to [Google Cloud Console](https://console.cloud.google.com/)
+   - Create a new project or select an existing one
+   - Enable the Google Sheets API and Google Drive API
+   - Create a Service Account:
+     - Navigate to "IAM & Admin" → "Service Accounts"
+     - Click "Create Service Account"
+     - Give it a name (e.g., "ats-pipeline-sync")
+     - Grant it "Editor" role (or create a custom role with Sheets and Drive access)
+   - Create a key:
+     - Click on the service account
+     - Go to "Keys" tab
+     - Click "Add Key" → "Create new key"
+     - Choose JSON format
+     - Download the JSON file (this is your credentials file)
+
+2. **Share your Google Sheet:**
+   - Open your Google Sheet
+   - Click "Share" button
+   - Add the service account email (found in the JSON file, e.g., `ats-pipeline-sync@project-id.iam.gserviceaccount.com`)
+   - Give it "Editor" access
+   - Click "Send"
+
+3. **Get your Spreadsheet ID:**
+   - Open your Google Sheet
+   - The Spreadsheet ID is in the URL: `https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit`
+   - Copy the `SPREADSHEET_ID` part
+
+### Sheet Format
+
+Your Google Sheet should have the following columns (case-insensitive):
+
+- **Company Name**: Company name
+- **Job Title**: Job title
+- **Job Link / Source**: URL where the job was posted
+- **Date Added**: Date when you added the job (format: YYYY-MM-DD or MM/DD/YYYY)
+- **Date Applied**: Date when you applied (format: YYYY-MM-DD or MM/DD/YYYY)
+- **Interested**: "Yes" or "No" (maps to "Interested" status)
+- **Notes**: Additional notes about the job
+- **Job Description Link**: Link to full job description
+- **Contact Name**: Name of recruiter/contact person
+- **Contact Info**: Email, phone, or LinkedIn URL
+- **Interview Date(s)**: Date(s) of interviews
+- **Offer / Outcome**: Final outcome (Offer, Rejected, Interview, Withdrawn, etc.)
+
+**Note:** The sync is flexible with column names - it will match variations like "Company", "company_name", etc.
+
+### CLI Sync
+
+Sync jobs from Google Sheets using the command line:
+
+```bash
+ats sync-sheet --credentials path/to/credentials.json --spreadsheet-id YOUR_SPREADSHEET_ID
+```
+
+Options:
+- `--credentials`: Path to Google service account JSON file (required)
+- `--spreadsheet-id`: Google Sheets spreadsheet ID (required)
+- `--sheet-name`: Name of the sheet to sync from (default: "Sheet1")
+- `--dry-run`: Preview changes without applying them
+
+Examples:
+```bash
+# Dry run to preview changes
+ats sync-sheet --credentials credentials.json --spreadsheet-id 1abc123def456 --dry-run
+
+# Actually sync the data
+ats sync-sheet --credentials credentials.json --spreadsheet-id 1abc123def456
+
+# Sync from a specific sheet
+ats sync-sheet --credentials credentials.json --spreadsheet-id 1abc123def456 --sheet-name "Job Applications"
+```
+
+### GUI Sync
+
+You can also sync from the Streamlit GUI:
+
+1. Launch the GUI: `streamlit run src/gui/main_window.py`
+2. In the left panel, expand "Google Sheets Sync"
+3. Enter:
+   - **Credentials Path**: Path to your service account JSON file
+   - **Spreadsheet ID**: Your spreadsheet ID
+   - **Sheet Name**: Name of the sheet (default: "Sheet1")
+4. Click "Sync (Dry Run)" to preview changes, or "Sync (Apply)" to sync
+
+### How Sync Works
+
+- **One-way sync**: Data flows from Google Sheets → Database (Sheet is the source of truth)
+- **Job matching**: Jobs are matched by Company + Title, or by Source URL if available
+- **Updates**: Existing jobs are updated with new information from the sheet
+- **New jobs**: Jobs not in the database are added
+- **Status mapping**: 
+  - "Interested" = "Yes" → Status: "Interested"
+  - "Offer / Outcome" column → Maps to status (Offer, Rejected, Interview, etc.)
+- **Contacts**: Contact information is saved to the `contacts` table
+- **Applications**: Application dates and interview dates are saved to the `applications` table
+
+### Dependencies
+
+Google Sheets sync requires additional packages:
+```bash
+pip install gspread google-auth
+```
+
+These are included in `requirements.txt` but if you get import errors, install them manually.
 
 ## Testing
 

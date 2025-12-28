@@ -14,10 +14,21 @@ def create_tables(conn: sqlite3.Connection) -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             version INTEGER NOT NULL,
             resume_json TEXT NOT NULL,
+            file_path TEXT,
+            job_id INTEGER,
+            is_customized BOOLEAN DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (job_id) REFERENCES jobs(id)
         )
     """)
+    
+    # Add new columns if they don't exist (for existing databases)
+    for column in ["file_path", "job_id", "is_customized"]:
+        try:
+            cursor.execute(f"ALTER TABLE resumes ADD COLUMN {column} {('TEXT' if column == 'file_path' else 'INTEGER' if column == 'job_id' else 'BOOLEAN DEFAULT 0')}")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
     
     # Jobs table
     cursor.execute("""
@@ -40,6 +51,21 @@ def create_tables(conn: sqlite3.Connection) -> None:
         cursor.execute("ALTER TABLE jobs ADD COLUMN status TEXT DEFAULT 'New'")
     except sqlite3.OperationalError:
         pass  # Column already exists
+    
+    # Add Google Sheets columns if they don't exist
+    google_sheets_columns = [
+        ("date_applied", "TIMESTAMP"),
+        ("notes", "TEXT"),
+        ("contact_name", "TEXT"),
+        ("contact_info", "TEXT"),
+        ("interview_dates", "TEXT"),
+        ("offer_outcome", "TEXT"),
+    ]
+    for column_name, column_type in google_sheets_columns:
+        try:
+            cursor.execute(f"ALTER TABLE jobs ADD COLUMN {column_name} {column_type}")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
     
     # Job matches table
     cursor.execute("""
@@ -85,6 +111,21 @@ def create_tables(conn: sqlite3.Connection) -> None:
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (job_id) REFERENCES jobs(id),
             FOREIGN KEY (resume_id) REFERENCES resumes(id)
+        )
+    """)
+    
+    # Contacts table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS contacts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id INTEGER,
+            name TEXT,
+            email TEXT,
+            phone TEXT,
+            linkedin TEXT,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (job_id) REFERENCES jobs(id)
         )
     """)
     

@@ -279,9 +279,19 @@ def rewrite_resume(resume_json, job_json, ontology, user_skills, reuse_threshold
                     
                     choice = input("\nUse this resume? [y/n]: ").strip().lower()
                     if choice == 'y':
+                        # Save using ResumeManager
+                        from src.storage.resume_manager import ResumeManager
+                        resume_manager = ResumeManager()
+                        resume_dir = resume_manager.save_resume(
+                            reused_resume,
+                            job=job_posting,
+                            is_customized=job_posting is not None
+                        )
+                        # Also save to legacy location
                         with open(output_path, 'w', encoding='utf-8') as f:
                             json.dump(reused_resume.model_dump(), f, indent=2, default=str)
-                        click.echo(f"Reused resume saved to {output_path}")
+                        click.echo(f"Reused resume saved to organized folder: {resume_dir}")
+                        click.echo(f"Also saved to: {output_path}")
                         return
             except Exception as e:
                 # If reuse check fails, continue with normal flow
@@ -337,11 +347,21 @@ def rewrite_resume(resume_json, job_json, ontology, user_skills, reuse_threshold
         workflow = ResumeApprovalWorkflow(rewriter)
         updated_resume = workflow.process_resume_rewrite(resume, proposals)
         
-        # Save output
+        # Save using ResumeManager for organized storage
+        from src.storage.resume_manager import ResumeManager
+        resume_manager = ResumeManager()
+        resume_dir = resume_manager.save_resume(
+            updated_resume,
+            job=job_posting,
+            is_customized=job_posting is not None
+        )
+        
+        # Also save to legacy location for backward compatibility
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(updated_resume.model_dump(), f, indent=2, default=str)
         
-        click.echo(f"Updated resume saved to {output_path}")
+        click.echo(f"Updated resume saved to organized folder: {resume_dir}")
+        click.echo(f"Also saved to: {output_path}")
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
         import traceback
@@ -609,11 +629,21 @@ def apply(job_url, resume_json, user_skills, skip_match, use_playwright, reuse_t
             workflow = ResumeApprovalWorkflow(rewriter)
             resume = workflow.process_resume_rewrite(resume, proposals)
         
-        # Save updated resume
+        # Save updated resume using ResumeManager
+        from src.storage.resume_manager import ResumeManager
+        resume_manager = ResumeManager()
+        resume_dir = resume_manager.save_resume(
+            resume,
+            job=job_posting,
+            is_customized=True
+        )
+        
+        # Also save to legacy location
         with open(resume_updated_path, 'w', encoding='utf-8') as f:
             json.dump(resume.model_dump(), f, indent=2, default=str)
         
-        click.echo(f"Updated resume saved to {resume_updated_path}")
+        click.echo(f"Updated resume saved to organized folder: {resume_dir}")
+        click.echo(f"Also saved to: {resume_updated_path}")
         click.echo()
         
         # Step 4: Render PDF
@@ -631,6 +661,67 @@ def apply(job_url, resume_json, user_skills, skip_match, use_playwright, reuse_t
         click.echo(f"  - Updated resume: {resume_updated_path}")
         click.echo(f"  - PDF: {pdf_path}")
         
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
+@cli.command()
+@click.option('--credentials', type=click.Path(exists=True), required=True, help='Path to Google service account JSON credentials')
+@click.option('--spreadsheet-id', required=True, help='Google Sheets spreadsheet ID')
+@click.option('--sheet-name', default='Sheet1', help='Sheet name to sync from (default: Sheet1)')
+@click.option('--dry-run', is_flag=True, help='Show what would be synced without making changes')
+def sync_sheet(credentials, spreadsheet_id, sheet_name, dry_run):
+    """Sync jobs from Google Sheets to database."""
+    try:
+        from src.sync.google_sheets_client import GoogleSheetsClient
+        from src.sync.sheet_sync import SheetSyncService
+        from src.db.database import Database
+        
+        click.echo(f"\n{'='*80}")
+        click.echo("GOOGLE SHEETS SYNC")
+        click.echo(f"{'='*80}\n")
+        
+        if dry_run:
+            click.echo("DRY RUN MODE - No changes will be made\n")
+        
+        # Initialize client
+        click.echo("Connecting to Google Sheets...")
+        client = GoogleSheetsClient(credentials, spreadsheet_id)
+        click.echo(f"Connected to spreadsheet: {spreadsheet_id}")
+        click.echo(f"Reading sheet: {sheet_name}\n")
+        
+        # Initialize sync service
+        db = Database()
+        sync_service = SheetSyncService(db, client)
+        
+        # Perform sync
+        click.echo("Finding sheet with required columns...")
+        if sheet_name:
+            click.echo(f"Using specified sheet: {sheet_name}")
+        else:
+            click.echo("Auto-detecting sheet...")
+        
+        click.echo("Syncing jobs...")
+        stats = sync_service.sync_from_sheet(sheet_name, dry_run=dry_run)
+        
+        click.echo(f"\n{'='*80}")
+        click.echo("SYNC COMPLETE")
+        click.echo(f"{'='*80}")
+        click.echo(f"Sheet used: {stats.get('sheet_name', 'Unknown')}")
+        click.echo(f"Jobs added: {stats['added']}")
+        click.echo(f"Jobs updated: {stats['updated']}")
+        click.echo(f"Errors: {stats['errors']}")
+        
+        if dry_run:
+            click.echo("\nThis was a dry run. Run without --dry-run to apply changes.")
+        
+    except ImportError as e:
+        click.echo(f"Error: {e}", err=True)
+        click.echo("\nInstall required packages: pip install gspread google-auth", err=True)
+        sys.exit(1)
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
         import traceback
@@ -664,6 +755,22 @@ def render_pdf(resume_json):
         click.echo(f"Successfully generated PDF: {pdf_path}")
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
+@cli.command()
+def deduplicate_jobs():
+    """Remove duplicate jobs from database, keeping the most recent one for each company+title combination."""
+    try:
+        db = Database()
+        stats = db.deduplicate_jobs()
+        click.echo(f"Deduplication complete!")
+        click.echo(f"- Removed: {stats['removed']} duplicate jobs")
+        click.echo(f"- Kept: {stats['kept']} unique jobs")
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
 

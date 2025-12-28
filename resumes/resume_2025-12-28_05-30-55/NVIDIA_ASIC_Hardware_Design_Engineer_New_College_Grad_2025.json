@@ -1,0 +1,363 @@
+{
+  "name": "Swesan Pathmanathan",
+  "phone": "+1-647-447-9580",
+  "email": "201360on50@gmail.com",
+  "linkedin": "https://www.linkedin.com/in/swesan",
+  "github": "https://github.com/swesan123",
+  "location": null,
+  "citizenship": "Canadian Citizen",
+  "experience": [
+    {
+      "organization": "Advanced Micro Devices (AMD)",
+      "role": "Datacenter GPU Hardware Validation Engineer (Co-op)",
+      "location": "Markham, ON",
+      "start_date": "May 2024",
+      "end_date": "Aug 2025",
+      "bullets": [
+        {
+          "text": "Validated AMD MI300X/MI325X/MI350X/MI355X GPUs using internal debugging tools and Python.",
+          "skills": [
+            "MI300X/MI325X/MI350X/MI355X",
+            "Python"
+          ],
+          "evidence": null,
+          "history": []
+        },
+        {
+          "text": "Utilized Linux-based debug workflows to troubleshoot silicon and firmware issues, applying digital design principles.",
+          "skills": [
+            "Linux",
+            "Digital design"
+          ],
+          "evidence": null,
+          "history": [
+            {
+              "original_text": "Triaged silicon, firmware, and platform issues using Linux-based debug workflows.",
+              "new_text": "Utilized Linux-based debug workflows to troubleshoot silicon and firmware issues, applying digital design principles.",
+              "justification": {
+                "trigger": "Add ATS keywords from reasoning analysis",
+                "skills_added": [
+                  "Digital design"
+                ],
+                "ats_keywords_added": [
+                  "troubleshoot",
+                  "silicon issues"
+                ]
+              },
+              "reasoning": {
+                "problem_identification": "The current bullet lacks mention of critical skills required for the job, specifically digital design knowledge and RTL design knowledge (Verilog), which are essential for the role.",
+                "analysis": "The current bullet highlights experience with Linux-based debug workflows but does not address the job requirements that emphasize digital design and RTL design knowledge. This creates a disconnect between the candidate's experience and the skills sought by the employer.",
+                "solution_approach": "The approach chosen is to revise the bullet to incorporate relevant skills in digital design and RTL design (Verilog) while maintaining the context of debugging and problem-solving. This will demonstrate a broader skill set that aligns with the job requirements.",
+                "evaluation": "This variation works better because it directly addresses the missing skills in the job requirements, showcasing the candidate's relevant experience in digital design and RTL design, which enhances their fit for the position.",
+                "alternatives_considered": [
+                  "Add a separate bullet for digital design experience",
+                  "Combine existing bullet with a new bullet that highlights Verilog experience",
+                  "Focus solely on problem-solving skills without mentioning specific technologies"
+                ],
+                "confidence_score": 0.85
+              },
+              "approved_by_human": false,
+              "timestamp": "2025-12-28 05:28:55.841446",
+              "selected_variation_index": null
+            }
+          ]
+        },
+        {
+          "text": "Implemented automated triage flows using Python, showcasing expertise in digital design and reducing diagnosis time by 50%.",
+          "skills": [
+            "Python",
+            "Digital Design"
+          ],
+          "evidence": null,
+          "history": [
+            {
+              "original_text": "Developed automated triage flows in Python, reducing diagnosis time by 50%.",
+              "new_text": "Implemented automated triage flows using Python, showcasing expertise in digital design and reducing diagnosis time by 50%.",
+              "justification": {
+                "trigger": "Emphasize skills identified in reasoning",
+                "skills_added": [
+                  "Digital Design"
+                ],
+                "ats_keywords_added": []
+              },
+              "reasoning": {
+                "problem_identification": "The current bullet lacks mention of digital design and RTL design knowledge, which are explicitly required by the job description. Additionally, it does not highlight any relevant experience or skills that align with the job requirements beyond Python programming.",
+                "analysis": "The current bullet focuses solely on Python programming and a quantifiable achievement (reducing diagnosis time by 50%). However, it does not address the required skills in digital design and RTL design (Verilog), which are critical for the position. The bullet does not demonstrate a comprehensive understanding of the job requirements.",
+                "solution_approach": "The approach chosen is to revise the bullet to include relevant skills in digital design and RTL design, while still highlighting the achievement in Python. This will create a more holistic view of the candidate's qualifications and directly address the job requirements.",
+                "evaluation": "This variation works better because it aligns the candidate's experience with the specific skills required for the job. By incorporating digital design and RTL design knowledge, the bullet demonstrates a broader skill set that matches the employer's needs, making the candidate more appealing.",
+                "alternatives_considered": [
+                  "Adding a separate bullet for digital design and RTL design experience.",
+                  "Rephrasing the current bullet to include a mention of digital design without changing the focus on Python.",
+                  "Creating a summary section that highlights all relevant skills before the bullet points."
+                ],
+                "confidence_score": 0.85
+              },
+              "approved_by_human": false,
+              "timestamp": "2025-12-28 05:29:10.223122",
+              "selected_variation_index": null
+            }
+          ]
+        },
+        {
+          "text": "Developed reusable debug playbooks incorporating digital design and RTL concepts to streamline team validation processes.",
+          "skills": [
+            "digital design",
+            "RTL design"
+          ],
+          "evidence": null,
+          "history": [
+            {
+              "original_text": "Authored reusable debug playbooks to standardize validation procedures across teams.",
+              "new_text": "Developed reusable debug playbooks incorporating digital design and RTL concepts to streamline team validation processes.",
+              "justification": {
+                "trigger": "Emphasize skills identified in reasoning",
+                "skills_added": [
+                  "digital design",
+                  "RTL design"
+                ],
+                "ats_keywords_added": [
+                  "digital design",
+                  "RTL design"
+                ]
+              },
+              "reasoning": {
+                "problem_identification": "The current bullet does not highlight the required skills in digital design and RTL design knowledge, which are critical for the job role.",
+                "analysis": "The current bullet focuses on the creation of debug playbooks, which demonstrates problem-solving and communication skills. However, it lacks specific references to digital design and RTL design knowledge, which are explicitly mentioned in the job requirements.",
+                "solution_approach": "The approach chosen is to revise the bullet to incorporate specific terminology related to digital design and RTL design (Verilog), while still emphasizing the standardization and validation aspects of the work. This will directly address the missing skills and align the experience with the job requirements.",
+                "evaluation": "This variation works better because it not only retains the original focus on standardization and validation but also explicitly mentions the relevant technical skills that the employer is seeking. This alignment increases the chances of passing through applicant tracking systems and catching the attention of hiring managers.",
+                "alternatives_considered": [
+                  "Rewriting the bullet to focus solely on digital design projects.",
+                  "Adding a separate bullet that lists technical skills without integrating them into the context of the work done."
+                ],
+                "confidence_score": 0.85
+              },
+              "approved_by_human": false,
+              "timestamp": "2025-12-28 05:29:20.278584",
+              "selected_variation_index": null
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "education": [
+    {
+      "institution": "McMaster University",
+      "location": "Hamilton, ON",
+      "degree": "Bachelor of Engineering, Software Engineering (Co-op)",
+      "start_date": "Sep 2021",
+      "end_date": "Apr 2026"
+    }
+  ],
+  "skills": {
+    "Languages": [
+      "Python",
+      "Java",
+      "C",
+      "TypeScript",
+      "SQL"
+    ],
+    "ML/AI": [
+      "NumPy",
+      "pandas",
+      "scikit-learn",
+      "TensorFlow",
+      "PyTorch",
+      "Matplotlib"
+    ],
+    "Mobile/Web": [
+      "React Native (Expo)",
+      "React Navigation",
+      "NativeWind/Tailwind",
+      "tRPC"
+    ],
+    "Backend/DB": [
+      "Node.js",
+      "PostgreSQL",
+      "Drizzle ORM",
+      "JWT"
+    ],
+    "DevOps": [
+      "Docker",
+      "Railway",
+      "Linux"
+    ]
+  },
+  "projects": [
+    {
+      "name": "Pneumonia Detection CNN",
+      "tech_stack": [
+        "\\textbf{Python",
+        "TensorFlow/Keras",
+        "scikit-learn}"
+      ],
+      "start_date": "Sep 2025",
+      "end_date": "Dec 2025",
+      "bullets": [
+        {
+          "text": "Built a convolutional neural network classifier in Python using TensorFlow.",
+          "skills": [
+            "Python",
+            "TensorFlow"
+          ],
+          "evidence": null,
+          "history": []
+        },
+        {
+          "text": "Applied preprocessing, augmentation, and splitting using NumPy and pandas.",
+          "skills": [
+            "NumPy",
+            "pandas"
+          ],
+          "evidence": null,
+          "history": []
+        },
+        {
+          "text": "Evaluated accuracy, precision, recall, and confusion matrices using scikit-learn and Matplotlib.",
+          "skills": [
+            "scikit-learn",
+            "Matplotlib"
+          ],
+          "evidence": null,
+          "history": []
+        }
+      ]
+    },
+    {
+      "name": "Solar Flare Classification SVM",
+      "tech_stack": [
+        "\\textbf{Python",
+        "scikit-learn}"
+      ],
+      "start_date": "Sep 2025",
+      "end_date": "Oct 2025",
+      "bullets": [
+        {
+          "text": "Trained SVM models in Python using scikit-learn to classify flare intensity.",
+          "skills": [
+            "Python",
+            "scikit-learn"
+          ],
+          "evidence": null,
+          "history": []
+        },
+        {
+          "text": "Improved accuracy through feature scaling and hyperparameter tuning using NumPy and pandas.",
+          "skills": [
+            "NumPy",
+            "pandas"
+          ],
+          "evidence": null,
+          "history": []
+        },
+        {
+          "text": "Visualized ROC/PR curves and confusion matrices with Matplotlib.",
+          "skills": [
+            "Matplotlib"
+          ],
+          "evidence": null,
+          "history": []
+        }
+      ]
+    },
+    {
+      "name": "Breast Cancer Prediction",
+      "tech_stack": [
+        "\\textbf{Python",
+        "PyTorch",
+        "scikit-learn}"
+      ],
+      "start_date": "Oct 2025",
+      "end_date": "Nov 2025",
+      "bullets": [
+        {
+          "text": "Implemented a feedforward neural network in PyTorch with two hidden layers.",
+          "skills": [
+            "PyTorch"
+          ],
+          "evidence": null,
+          "history": []
+        },
+        {
+          "text": "Applied early stopping, mini-batch SGD, dropout, and L1/L2 regularization using NumPy and scikit-learn.",
+          "skills": [
+            "NumPy",
+            "scikit-learn"
+          ],
+          "evidence": null,
+          "history": []
+        },
+        {
+          "text": "Plotted training/validation loss trends using Matplotlib.",
+          "skills": [
+            "Matplotlib"
+          ],
+          "evidence": null,
+          "history": []
+        }
+      ]
+    },
+    {
+      "name": "Hitchly \u2014 Ride-Share (Capstone)",
+      "tech_stack": [
+        "\\textbf{React Native",
+        "TypeScript",
+        "Node.js",
+        "PostgreSQL",
+        "Tailwind}"
+      ],
+      "start_date": "Sep 2025",
+      "end_date": "Present",
+      "bullets": [
+        {
+          "text": "Developing a mobile ride-share application using React Native and TypeScript.",
+          "skills": [
+            "React Native",
+            "TypeScript"
+          ],
+          "evidence": null,
+          "history": []
+        },
+        {
+          "text": "Built backend APIs using Node.js, tRPC, and PostgreSQL.",
+          "skills": [
+            "Node.js",
+            "tRPC",
+            "PostgreSQL"
+          ],
+          "evidence": null,
+          "history": []
+        },
+        {
+          "text": "Implemented user authentication with JWT and styled UI using Tailwind.",
+          "skills": [
+            "JWT",
+            "Tailwind"
+          ],
+          "evidence": null,
+          "history": []
+        }
+      ]
+    }
+  ],
+  "hobbies": [
+    "Running",
+    "Strength Training",
+    "PC Building",
+    "Soldering",
+    "Gaming",
+    "Anime"
+  ],
+  "courses": [
+    "Applications of Machine Learning",
+    "Natural Language Processing",
+    "Software Design IV Capstone",
+    "Databases",
+    "Networks & Security",
+    "Algorithms",
+    "Probability & Statistics"
+  ],
+  "version": 1,
+  "date_created": "2025-12-28 04:49:57.110583",
+  "date_updated": "2025-12-28 04:49:57.110587"
+}

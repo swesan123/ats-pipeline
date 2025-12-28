@@ -9,115 +9,246 @@ sys.path.insert(0, str(project_root))
 
 import streamlit as st
 import pandas as pd
+from pathlib import Path
 from src.db.database import Database
 from src.matching.skill_matcher import SkillMatcher
 from src.models.skills import SkillOntology
+from src.models.resume import Resume
+from src.storage.resume_manager import ResumeManager
+from src.gui.job_helpers import auto_match_skills
 
 
 def render_job_list(db: Database):
     """Render jobs table and return selected job."""
-    jobs = db.list_jobs()
+    try:
+        jobs = db.list_jobs()
+    except Exception as e:
+        st.error(f"Error loading jobs: {e}")
+        import traceback
+        st.exception(e)
+        return None
     
     if not jobs:
         st.info("No jobs added yet. Add a job using the form on the left.")
         return None
     
-    # Calculate fit scores if resume exists
-    fit_scores = {}
-    try:
-        resume = db.get_latest_resume()
-        # If resume not in DB, try loading from file
-        if not resume:
-            resume_path = Path("data/resume.json")
-            if resume_path.exists():
-                try:
-                    import json
-                    from src.models.resume import Resume
-                    with open(resume_path, 'r', encoding='utf-8') as f:
-                        resume_data = json.load(f)
-                    resume = Resume.model_validate(resume_data)
-                except Exception as e:
-                    st.warning(f"Could not load resume from file: {e}")
-                    resume = None
-        
-        if resume:
-            ontology = SkillOntology()
-            matcher = SkillMatcher(ontology)
-            for job in jobs:
-                job_id = job.get('id')
-                # Try to get from database first
-                cached_score = db.get_latest_job_match_fit_score(job_id)
-                if cached_score is not None:
-                    fit_scores[job_id] = cached_score
-                else:
-                    # Calculate on the fly
+    # Get resume for matching
+    resume = db.get_latest_resume()
+    if not resume:
+        resume_path = Path("data/resume.json")
+        if resume_path.exists():
+            try:
+                import json
+                with open(resume_path, 'r', encoding='utf-8') as f:
+                    resume_data = json.load(f)
+                resume = Resume.model_validate(resume_data)
+            except Exception as e:
+                st.warning(f"Could not load resume from file: {e}")
+                resume = None
+    
+    # Refresh button
+    col_refresh, col_spacer = st.columns([1, 10])
+    with col_refresh:
+        if st.button("🔄 Refresh", help="Re-run skill matching for all jobs", key="refresh_jobs"):
+            st.session_state['refreshing_jobs'] = True
+            st.rerun()
+    
+    # Auto-match skills if refreshing or if jobs don't have cached matches
+    if resume:
+        if st.session_state.get('refreshing_jobs', False):
+            with st.spinner("Refreshing fit scores..."):
+                ontology = SkillOntology()
+                matcher = SkillMatcher(ontology)
+                for job in jobs:
+                    job_id = job.get('id')
+                    # Force re-match
                     job_skills = db.get_job_skills(job_id)
                     if job_skills:
                         job_match = matcher.match_job(resume, job_skills)
-                        fit_scores[job_id] = job_match.fit_score
-                        # Cache the result
                         resume_id = db.get_latest_resume_id()
                         if resume_id:
                             db.save_job_match(job_match, job_id, resume_id)
-                    else:
-                        fit_scores[job_id] = 0.0
+                st.session_state['refreshing_jobs'] = False
+                st.success("Fit scores refreshed!")
+                st.rerun()
         else:
-            # No resume, set all to 0
-            for job in jobs:
-                fit_scores[job.get('id')] = 0.0
-    except Exception as e:
-        # If calculation fails, set all to 0
-        st.error(f"Error calculating fit scores: {e}")
+            # Auto-match jobs that don't have cached scores - limit to first 10 to avoid blocking
+            # The rest will be matched on-demand or via refresh button
+            jobs_to_match = [job for job in jobs[:10]]  # Limit to first 10 jobs
+            for job in jobs_to_match:
+                job_id = job.get('id')
+                cached_score = db.get_latest_job_match_fit_score(job_id)
+                if cached_score is None:
+                    try:
+                        auto_match_skills(db, job_id, resume)
+                    except Exception:
+                        pass  # Continue with other jobs
+    
+    # Calculate fit scores
+    fit_scores = {}
+    if resume:
+        ontology = SkillOntology()
+        matcher = SkillMatcher(ontology)
+        for job in jobs:
+            job_id = job.get('id')
+            cached_score = db.get_latest_job_match_fit_score(job_id)
+            if cached_score is not None:
+                fit_scores[job_id] = cached_score
+            else:
+                job_skills = db.get_job_skills(job_id)
+                if job_skills:
+                    job_match = matcher.match_job(resume, job_skills)
+                    fit_scores[job_id] = job_match.fit_score
+                    resume_id = db.get_latest_resume_id()
+                    if resume_id:
+                        db.save_job_match(job_match, job_id, resume_id)
+                else:
+                    fit_scores[job_id] = 0.0
+    else:
         for job in jobs:
             fit_scores[job.get('id')] = 0.0
     
-    # Convert to DataFrame
-    df = pd.DataFrame(jobs)
-    df['Fit Score'] = df['id'].map(fit_scores).fillna(0.0)
-    # Use status from database, default to 'New'
-    if 'status' not in df.columns:
-        df['status'] = 'New'
-    df['Status'] = df['status'].fillna('New')
+    # Convert to DataFrame - ensure we have the required columns
+    if not jobs:
+        st.info("No jobs added yet. Add a job using the form on the left.")
+        return None
+    
+    try:
+        df = pd.DataFrame(jobs)
+        
+        # Ensure required columns exist
+        if 'id' not in df.columns:
+            st.error("Jobs data missing 'id' column")
+            return None
+        
+        df['Fit Score'] = df['id'].map(fit_scores).fillna(0.0)
+        if 'status' not in df.columns:
+            df['status'] = 'New'
+        df['Status'] = df['status'].fillna('New')
+        
+        # Add download column - check if resume exists for each job
+        try:
+            resume_manager = ResumeManager()
+            download_links = []
+            for idx, job in enumerate(jobs):
+                # Create JobPosting from job dict
+                from src.models.job import JobPosting
+                try:
+                    job_obj = JobPosting(
+                        company=job.get('company', ''),
+                        title=job.get('title', ''),
+                        location=job.get('location'),
+                        description=job.get('description', ''),
+                        source_url=job.get('source_url'),
+                    )
+                    resume_path = resume_manager.get_resume_by_job(job_obj)
+                    download_links.append("📥" if resume_path and resume_path.exists() else "")
+                except Exception:
+                    # If error creating job object, just add empty
+                    download_links.append("")
+            df['Download'] = download_links
+        except Exception:
+            # If error, just add empty download column
+            df['Download'] = [""] * len(df)
+    except Exception as e:
+        st.error(f"Error creating jobs DataFrame: {e}")
+        import traceback
+        st.exception(e)
+        return None
     
     # Status options
     status_options = ['New', 'Interested', 'Applied', 'Interview', 'Offer', 'Rejected', 'Withdrawn']
     
-    # Create a copy for display with status as selectbox
-    display_df = df[['company', 'title', 'Fit Score', 'Status', 'created_at']].copy()
+    # Prepare display columns - include Google Sheets columns
+    # Start with required columns
+    display_cols = ['company', 'title', 'Fit Score', 'Status', 'created_at']
     
-    # Add instructions for status editing
-    st.caption("Tip: Double-click on a Status cell to change it, or use the dropdown below the table")
+    # Add optional columns if they exist
+    if 'date_applied' in df.columns:
+        display_cols.append('date_applied')
     
-    # Display table (read-only for selection)
-    selected_rows = st.dataframe(
-        display_df,
-        column_config={
-            "Fit Score": st.column_config.ProgressColumn(
-                "Fit Score",
-                min_value=0.0,
-                max_value=1.0,
-                format="%.2f%%",
-            ),
-            "created_at": st.column_config.DatetimeColumn("Date Added"),
-        },
-        on_select="rerun",
-        selection_mode="single-row",
-        width='stretch',
-        key="job_list_table",
-    )
+    # Always add Download column
+    display_cols.append('Download')
     
-    # Add status editor below table for selected row
+    # Filter to only include columns that exist in df
+    display_cols = [col for col in display_cols if col in df.columns]
+    
+    display_df = df[display_cols].copy()
+    
+    # Build column config dynamically
+    column_config = {
+        "Fit Score": st.column_config.ProgressColumn(
+            "Fit Score",
+            min_value=0.0,
+            max_value=1.0,
+            format="%.2f%%",
+        ),
+        "created_at": st.column_config.DatetimeColumn("Date Added"),
+        "Download": st.column_config.TextColumn("Download", width="small"),
+    }
+    
+    # Add date_applied config if column exists
+    if 'date_applied' in display_df.columns:
+        column_config["date_applied"] = st.column_config.DatetimeColumn("Date Applied")
+    
+    # Display table - ensure it always shows
+    try:
+        if display_df.empty or len(display_df) == 0:
+            st.warning("No jobs to display (DataFrame is empty)")
+            return None
+        
+        # Show row count
+        st.caption(f"Showing {len(display_df)} job(s)")
+        
+        selected_rows = st.dataframe(
+            display_df,
+            column_config=column_config,
+            on_select="rerun",
+            selection_mode="single-row",
+            width='stretch',
+            key="job_list_table",
+        )
+    except Exception as e:
+        st.error(f"Error displaying jobs table: {e}")
+        import traceback
+        st.exception(e)
+        # Fallback: show simple table without advanced config
+        try:
+            st.dataframe(display_df, use_container_width=True)
+        except:
+            st.write("Unable to display jobs table. Please check the console for errors.")
+        # Create a dummy selected_rows object
+        class DummySelection:
+            def __init__(self):
+                self.rows = []
+        class DummyRows:
+            def __init__(self):
+                self.selection = DummySelection()
+        selected_rows = DummyRows()
+    
+    # Handle download clicks (check if download column was clicked)
     if selected_rows.selection.rows:
         selected_idx = selected_rows.selection.rows[0]
         selected_job_id = int(df.iloc[selected_idx]['id'])
-        current_status = str(df.iloc[selected_idx]['Status'])
+        selected_job = jobs[selected_idx]
         
+        # Get job object for download
+        from src.models.job import JobPosting
+        job_obj = JobPosting(
+            company=selected_job.get('company', ''),
+            title=selected_job.get('title', ''),
+            location=selected_job.get('location'),
+            description=selected_job.get('description', ''),
+            source_url=selected_job.get('source_url'),
+        )
+        resume_path = resume_manager.get_resume_by_job(job_obj)
+        
+        # Status editor
         st.divider()
-        st.write(f"**Selected Job:** {df.iloc[selected_idx]['company']} - {df.iloc[selected_idx]['title']}")
+        current_status = str(df.iloc[selected_idx]['Status'])
         
         col1, col2 = st.columns([2, 1])
         with col1:
-            # Get current status index, default to 0 if not found
             try:
                 current_index = status_options.index(current_status)
             except ValueError:
@@ -130,30 +261,41 @@ def render_job_list(db: Database):
                 key=f"status_select_{selected_job_id}",
             )
         with col2:
-            st.write("")  # Spacing
-            st.write("")  # Spacing
+            st.write("")
+            st.write("")
             update_button = st.button("Update Status", key=f"update_status_{selected_job_id}", type="primary")
         
-        # Handle status update
         if update_button:
             try:
                 if new_status != current_status:
                     db.update_job_status(selected_job_id, new_status)
-                    st.success(f"✓ Status updated to: **{new_status}**")
-                    # Force rerun to refresh the table
+                    st.success(f"Status updated to: **{new_status}**")
                     st.rerun()
-                else:
-                    st.info("Status is already set to this value")
             except Exception as e:
                 st.error(f"Error updating status: {e}")
-                import traceback
-                st.exception(e)
-    
-    # Get selected job
-    if selected_rows.selection.rows:
-        selected_idx = selected_rows.selection.rows[0]
-        selected_job = jobs[selected_idx]
+        
+        # Download button if resume exists
+        if resume_path and resume_path.exists():
+            st.download_button(
+                "Download Resume PDF",
+                data=resume_path.read_bytes(),
+                file_name=resume_path.name,
+                mime="application/pdf",
+                key=f"download_resume_{selected_job_id}"
+            )
+        
+        # Job details in expander (popup-like)
+        with st.expander(f"📋 {selected_job.get('company')} - {selected_job.get('title')}", expanded=True):
+            # Import and render job details
+            from src.gui.job_details import render_job_details
+            render_job_details(db, selected_job)
+        
+        # Ensure description is included
+        if 'description' not in selected_job or not selected_job.get('description'):
+            job_obj_db = db.get_job(selected_job.get('id'))
+            if job_obj_db:
+                selected_job['description'] = job_obj_db.description
+        
         return selected_job
     
     return None
-

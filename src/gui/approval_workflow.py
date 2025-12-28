@@ -75,23 +75,25 @@ def render_approval_workflow(
                 st.write(f"Skills added: {', '.join(justification.skills_added)}")
     
     # Action buttons
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
     
     with col1:
-        if st.button("Approve", type="primary"):
+        approve_btn = st.button("Approve", type="primary", key=f"approve_{bullet_num}")
+        if approve_btn:
+            st.session_state[f'approved_{bullet_num}'] = selected_variation
             return True, selected_variation
     
     with col2:
-        if st.button("Reject"):
+        reject_btn = st.button("Reject", key=f"reject_{bullet_num}")
+        if reject_btn:
+            st.session_state[f'rejected_{bullet_num}'] = True
             return False, None
     
-    with col3:
-        if st.button("Regenerate"):
-            feedback = st.text_input("Enter feedback for regeneration:")
-            if feedback:
-                st.info("Regeneration would happen here with feedback")
-                # Would call ResumeRewriter with feedback
-                return None, None
+    # Check if already approved/rejected in this session
+    if f'approved_{bullet_num}' in st.session_state:
+        return True, st.session_state[f'approved_{bullet_num}']
+    if f'rejected_{bullet_num}' in st.session_state:
+        return False, None
     
     return None, None
 

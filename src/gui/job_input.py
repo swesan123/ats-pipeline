@@ -143,6 +143,25 @@ def render_job_input(db: Database):
                 # Save to database
                 job_id = db.save_job(job_posting, job_skills)
                 
+                # Auto-match skills if resume exists
+                from src.gui.job_helpers import auto_match_skills
+                from src.models.resume import Resume
+                import json
+                resume = db.get_latest_resume()
+                if not resume:
+                    resume_path = Path("data/resume.json")
+                    if resume_path.exists():
+                        try:
+                            with open(resume_path, 'r', encoding='utf-8') as f:
+                                resume_data = json.load(f)
+                            resume = Resume.model_validate(resume_data)
+                        except:
+                            resume = None
+                
+                if resume:
+                    with st.spinner("Matching skills..."):
+                        auto_match_skills(db, job_id, resume)
+                
                 st.success(f"Job added successfully! (ID: {job_id})")
                 st.rerun()
             except Exception as e:
@@ -167,6 +186,26 @@ def render_job_input(db: Database):
                     extractor = JobSkillExtractor()
                     job_skills = extractor.extract_skills(job_posting)
                     job_id = db.save_job(job_posting, job_skills)
+                    
+                    # Auto-match skills if resume exists
+                    from src.gui.job_helpers import auto_match_skills
+                    from src.models.resume import Resume
+                    import json
+                    resume = db.get_latest_resume()
+                    if not resume:
+                        resume_path = Path("data/resume.json")
+                        if resume_path.exists():
+                            try:
+                                with open(resume_path, 'r', encoding='utf-8') as f:
+                                    resume_data = json.load(f)
+                                resume = Resume.model_validate(resume_data)
+                            except:
+                                resume = None
+                    
+                    if resume:
+                        with st.spinner("Matching skills..."):
+                            auto_match_skills(db, job_id, resume)
+                    
                     st.success(f"Job added from file! (ID: {job_id})")
                     st.rerun()
                 except Exception as e:

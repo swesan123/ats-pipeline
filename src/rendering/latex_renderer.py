@@ -150,6 +150,8 @@ class LaTeXRenderer:
             
             lines.append("%--- " + proj.name + " ---")
             lines.append("  \\resumeProjectHeading")
+            # Use $|$ format like the template (math mode for pipe character)
+            # Don't escape the $ characters here - they're part of the LaTeX math mode syntax
             lines.append(f"    {{\\textbf{{{proj_name_escaped}}} $|$ \\textbf{{{tech_stack_escaped}}}}}{{{self._format_dates(proj.start_date, proj.end_date)}}}")
             lines.append("    \\resumeItemListStart")
             for bullet in proj.bullets:
