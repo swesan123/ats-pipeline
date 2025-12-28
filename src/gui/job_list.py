@@ -85,6 +85,9 @@ def render_job_list(db: Database):
     # Create a copy for display with status as selectbox
     display_df = df[['company', 'title', 'Fit Score', 'Status', 'created_at']].copy()
     
+    # Add instructions for status editing
+    st.caption("Tip: Click on the Status column dropdown to change a job's status")
+    
     # Display table with editable status
     selected_rows = st.dataframe(
         display_df,
