@@ -1,2 +1,509 @@
-# ats-pipeline
+# ATS Pipeline
+
 End-to-end job application pipeline with skill matching, explainable resume compilation, and human-verified AI workflows.
+
+## Features
+
+- **LaTeX Resume Parsing**: Convert LaTeX resumes to structured JSON
+- **Job Skill Extraction**: Automatically extract required/preferred skills from job descriptions using AI
+- **Skill Matching**: Calculate job fit scores and identify skill gaps
+- **Resume Rewriting**: Generate 4 bullet variations with reasoning chains for each improvement
+- **Interactive Approval**: Review and approve resume changes with detailed justifications
+- **PDF Generation**: Render updated resumes back to LaTeX and compile to PDF
+- **CLI Interface**: Command-line interface with `ats` command for all operations
+- **Resume Reuse System**: Automatically detect and reuse resumes from similar jobs
+- **Streamlit GUI**: Visual job management interface
+- **Database Persistence**: SQLite database for tracking jobs, matches, and changes
+
+## Prerequisites
+
+- Python 3.10 or higher
+- LaTeX distribution (for PDF generation):
+  - **Linux/WSL**: 
+    ```bash
+    sudo apt-get install texlive-latex-base texlive-latex-extra texlive-fonts-extra
+    ```
+    This installs the base LaTeX packages plus the `newtxtext` and `newtxmath` packages needed for Times New Roman font.
+  - **macOS**: `brew install --cask mactex` or `brew install basictex`
+  - **Windows**: Install [MiKTeX](https://miktex.org/download) or [TeX Live](https://www.tug.org/texlive/)
+- OpenAI API key (for skill extraction and resume rewriting)
+
+## Installation
+
+1. **Clone the repository:**
+   ```bash
+   git clone <repository-url>
+   cd ats-pipeline
+   ```
+
+2. **Create a virtual environment (recommended):**
+   ```bash
+   python3 -m venv venv
+   
+   # Activate virtual environment
+   # On Linux/macOS:
+   source venv/bin/activate
+   # On Windows:
+   venv\Scripts\activate
+   ```
+
+3. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+   
+   This installs all required packages including:
+   - `pydantic>=2.0.0` - Data validation and serialization
+   - `openai>=1.0.0` - AI-powered skill extraction and resume rewriting
+   - `click>=8.0.0` - CLI framework for the `ats` command-line interface
+   - `python-dotenv>=1.0.0` - Environment variable management (for `.env` file support)
+   - `streamlit>=1.28.0` - Web GUI framework
+   - `pandas>=2.0.0` - Data manipulation
+   - `jinja2>=3.1.0` - Template engine
+   - `requests>=2.31.0` - HTTP library for web scraping
+   - `beautifulsoup4>=4.12.0` - HTML parsing for job URL extraction
+   - `lxml>=4.9.0` - Fast XML/HTML parser
+   - `playwright>=1.40.0` - Browser automation for JavaScript-heavy job boards
+   
+   **Note:** After installing, run `python3 -m playwright install` to set up browser binaries for Playwright:
+   ```bash
+   python3 -m playwright install
+   ```
+
+4. **Install development dependencies (optional, for testing):**
+   ```bash
+   pip install -r requirements-dev.txt
+   ```
+
+5. **Install the package (to use `ats` command):**
+   ```bash
+   pip install -e .
+   ```
+
+6. **Set up Playwright browsers (required for job URL extraction):**
+   After installing dependencies, you need to install browser binaries for Playwright:
+   ```bash
+   python3 -m playwright install
+   ```
+   
+   This downloads Chromium, Firefox, and WebKit browsers needed for scraping JavaScript-heavy job boards (Greenhouse, Lever, etc.).
+   
+   **Linux/WSL System Dependencies:**
+   If you see warnings about missing system libraries (libwebp, libx264, etc.), install them:
+   ```bash
+   # Option 1: Use Playwright's install-deps (requires sudo)
+   sudo python3 -m playwright install-deps
+   
+   # Option 2: Install manually on Ubuntu/Debian/WSL
+   sudo apt-get update
+   sudo apt-get install -y libwebp-dev libx264-dev
+   ```
+   
+   **Note:** This step is only required if you plan to extract skills from job URLs. File-based extraction works without Playwright.
+
+7. **Set up environment variables:**
+   Create a `.env` file in the project root (optional) or export the variable:
+   ```bash
+   export OPENAI_API_KEY="your-api-key-here"
+   ```
+   
+   Or create `.env` file:
+   ```bash
+   echo "OPENAI_API_KEY=your-api-key-here" > .env
+   ```
+
+## Setup Checklist
+
+Before using the pipeline, ensure you have:
+
+- ✅ Python 3.10+ installed
+- ✅ Virtual environment activated
+- ✅ Dependencies installed (`pip install -r requirements.txt`)
+- ✅ Package installed in editable mode (`pip install -e .`)
+- ✅ Playwright browsers installed (`python3 -m playwright install`) - **Required for job URL extraction**
+- ✅ OpenAI API key set in `.env` file or environment variable
+- ✅ LaTeX distribution installed (for PDF generation)
+
+## Quick Start
+
+### 1. Convert LaTeX Resume to JSON
+
+First, convert your LaTeX resume to JSON format. Output is automatically saved to `data/resume.json`:
+
+```bash
+ats convert-latex templates/resume.tex
+```
+
+### 2. Extract Skills from Job Description
+
+Extract skills from a job URL or description file. Output is automatically saved to `data/job_skills.json`:
+
+**From a job URL:**
+```bash
+ats extract-skills "https://boards.greenhouse.io/company/jobs/123456"
+```
+
+**From a file:**
+```bash
+ats extract-skills job_description.txt
+```
+
+**Force Playwright for JavaScript-heavy sites:**
+```bash
+ats extract-skills "https://jobs.lever.co/company/123" --use-playwright
+```
+
+**Important Notes for Job URL Extraction:**
+- The scraper automatically detects job board type (Greenhouse, Lever, LinkedIn, etc.) and uses the appropriate extraction method
+- **Playwright Setup Required**: For JavaScript-heavy job boards (Greenhouse, Lever, Ashby), you must install Playwright browsers:
+  ```bash
+  python3 -m playwright install
+  ```
+  This downloads browser binaries (~300MB). Only needed if extracting from URLs.
+- **OpenAI API Key Required**: Skill extraction uses OpenAI API. Set `OPENAI_API_KEY` in `.env` file or environment variable.
+- File-based extraction works without Playwright - you can always paste job descriptions into a text file instead.
+
+### 3. Match Resume Against Job
+
+Calculate fit score and identify skill gaps. Uses `data/resume.json` and `data/job_skills.json` by default:
+
+```bash
+ats match-job
+```
+
+Or specify custom paths:
+
+```bash
+ats match-job --resume-json data/resume.json --job-json data/job_skills.json
+```
+
+**Note:** The command uses options (flags), not positional arguments. Use `--resume-json` and `--job-json` flags if you need to specify custom paths.
+
+### 4. Generate Resume Rewrite Proposals
+
+Generate 4 variations for each bullet that needs adjustment. Output is automatically saved to `data/resume_updated.json`:
+
+```bash
+ats rewrite-resume
+```
+
+Or specify custom paths:
+
+```bash
+ats rewrite-resume --resume-json data/resume.json --job-json data/job_skills.json
+```
+
+**Important:** The command uses options (flags), not positional arguments. There is no `--output` option - output is always saved to `data/resume_updated.json`.
+
+Options:
+- `--resume-json`: Resume JSON file (default: `data/resume.json`)
+- `--job-json`: Job skills JSON file (default: `data/job_skills.json`)
+- `--reuse-threshold`: Minimum fit score to reuse existing resume (default: 0.90)
+- `--similarity-threshold`: Minimum job similarity to consider reuse (default: 0.85)
+- `--force-new`: Force generation of new resume even if reuse is available
+
+This will:
+- Check for reusable resumes from similar jobs (if database is available)
+- Analyze your resume against job requirements
+- Generate reasoning chains for each bullet that needs improvement
+- Show 4 variations for each bullet
+- Prompt you to approve/reject/select variations (y/n/r/1-4)
+
+### 5. Render PDF
+
+Generate a PDF from your updated resume JSON. Output is automatically saved to `data/resume.pdf`:
+
+```bash
+ats render-pdf
+```
+
+Or specify a custom resume file:
+
+```bash
+ats render-pdf --resume-json data/resume_updated.json
+```
+
+## CLI Commands Reference
+
+After installing the package with `pip install -e .`, you can use the `ats` command:
+
+**Important:** All commands use options (flags) instead of positional arguments. Output files are automatically saved to the `data/` folder and cannot be customized.
+
+### `convert-latex`
+Convert LaTeX resume to JSON format. Output is saved to `data/resume.json`.
+
+```bash
+ats convert-latex <input.tex>
+```
+
+### `extract-skills`
+Extract skills from a job URL or description file. Output is saved to `data/job_skills.json`.
+
+```bash
+ats extract-skills <job_url_or_file> [--use-playwright]
+```
+
+Options:
+- `--use-playwright`: Force use of Playwright for scraping (handles JavaScript-heavy sites)
+
+Examples:
+```bash
+# Extract from URL
+ats extract-skills "https://boards.greenhouse.io/company/jobs/123456"
+
+# Extract from file
+ats extract-skills job_description.txt
+
+# Force Playwright for dynamic content
+ats extract-skills "https://jobs.lever.co/company/123" --use-playwright
+```
+
+### `match-job`
+Calculate job fit score and show gap analysis. Uses `data/resume.json` and `data/job_skills.json` by default.
+
+```bash
+ats match-job [--resume-json <path>] [--job-json <path>] [--ontology <skills.json>]
+```
+
+Options:
+- `--resume-json`: Resume JSON file (default: `data/resume.json`)
+- `--job-json`: Job skills JSON file (default: `data/job_skills.json`)
+- `--ontology`: Optional skill ontology JSON file
+
+### `rewrite-resume`
+Generate resume rewrite proposals with interactive approval. Output is saved to `data/resume_updated.json`.
+
+```bash
+ats rewrite-resume [--resume-json <path>] [--job-json <path>] [--ontology <skills.json>] [--reuse-threshold <float>] [--similarity-threshold <float>] [--force-new]
+```
+
+Options:
+- `--resume-json`: Resume JSON file (default: `data/resume.json`)
+- `--job-json`: Job skills JSON file (default: `data/job_skills.json`)
+- `--ontology`: Optional skill ontology JSON file
+- `--reuse-threshold`: Minimum fit score to reuse existing resume (default: 0.90)
+- `--similarity-threshold`: Minimum job similarity to consider reuse (default: 0.85)
+- `--force-new`: Force generation of new resume even if reuse is available
+
+### `render-pdf`
+Generate PDF from JSON resume. Output is saved to `data/resume.pdf`.
+
+```bash
+ats render-pdf [--resume-json <path>]
+```
+
+Options:
+- `--resume-json`: Resume JSON file (default: `data/resume_updated.json`)
+
+## GUI Usage
+
+Launch the Streamlit GUI for visual job management:
+
+```bash
+streamlit run src/gui/main_window.py
+```
+
+The GUI provides:
+- **Left Panel**: Add jobs by pasting job descriptions or URLs
+- **Right Panel**: View all jobs in a table with fit scores
+- **Job Details**: Click a job to see details and generate resume
+- **Interactive Approval**: Review reasoning chains and approve variations
+
+## Project Structure
+
+```
+ats-pipeline/
+├── src/
+│   ├── models/          # Pydantic data models
+│   ├── parsers/         # LaTeX resume parser
+│   ├── extractors/      # Job skill extraction
+│   ├── matching/        # Skill matching engine
+│   ├── compilation/     # Resume rewriter with reasoning
+│   ├── approval/        # Interactive approval workflow
+│   ├── rendering/       # LaTeX renderer and PDF generator
+│   ├── db/              # Database schema and interface
+│   ├── cli/             # CLI commands
+│   ├── gui/             # Streamlit GUI components
+│   └── github/          # GitHub MCP integration
+├── tests/               # Test suite
+├── scripts/             # Utility scripts
+├── templates/           # LaTeX resume template
+├── .github/workflows/   # CI/CD configuration
+├── requirements.txt     # Production dependencies
+├── requirements-dev.txt # Development dependencies
+└── pyproject.toml       # Project configuration
+```
+
+## Database
+
+The application uses SQLite for data persistence. The database file (`ats_pipeline.db`) is created automatically on first use.
+
+**Tables:**
+- `resumes`: Versioned resume JSON snapshots
+- `jobs`: Job postings with extracted skills
+- `job_matches`: Fit scores and gap analysis
+- `bullet_changes`: Approval history with reasoning
+- `applications`: Application tracking
+
+## Testing
+
+Run the test suite:
+
+```bash
+# Run all tests
+pytest
+
+# Run with coverage
+pytest --cov=src --cov-report=html
+
+# View coverage report
+open htmlcov/index.html  # macOS/Linux
+# or
+start htmlcov/index.html  # Windows
+```
+
+## Development
+
+### Running Tests
+
+```bash
+# Unit tests only
+pytest tests/unit/
+
+# Integration tests
+pytest tests/integration/
+
+# Specific test file
+pytest tests/unit/test_models/test_resume.py
+```
+
+### Code Coverage
+
+The project aims for 80%+ code coverage. Coverage reports are generated in HTML format:
+
+```bash
+pytest --cov=src --cov-report=html
+```
+
+
+## Troubleshooting
+
+### LaTeX/PDF Generation Issues
+
+**Error: `pdflatex not found`**
+- Install a LaTeX distribution (see Prerequisites)
+- Ensure `pdflatex` is in your PATH
+
+**Error: `File 'newtxtext.sty' not found`**
+- Install the required LaTeX font packages:
+  ```bash
+  # Linux/WSL
+  sudo apt-get install texlive-fonts-extra
+  
+  # Or install full texlive distribution (includes all packages)
+  sudo apt-get install texlive-full
+  ```
+- The template uses Times New Roman font via `newtxtext` and `newtxmath` packages
+
+**Error: PDF compilation fails**
+- Check that the LaTeX template is valid
+- Ensure all required LaTeX packages are installed (see Prerequisites)
+- Check the error output for missing packages
+- Common missing packages: `newtxtext`, `newtxmath`, `enumitem`, `titlesec`
+
+### OpenAI API Issues
+
+**Error: `OpenAI API key required`**
+- Set the `OPENAI_API_KEY` environment variable
+- Or create a `.env` file with your API key
+
+**Error: API rate limits**
+- The application uses `gpt-4o-mini` by default for cost efficiency
+- Consider upgrading your OpenAI plan if you hit rate limits
+
+### Database Issues
+
+**Error: Database locked**
+- Close any other connections to the database
+- The database uses SQLite, which supports concurrent reads but not concurrent writes
+
+### Job URL Scraping Issues
+
+**Error: `Playwright is not installed`**
+- Install Playwright: `pip install playwright`
+- Install browser binaries: `python3 -m playwright install`
+- For JavaScript-heavy job boards (Greenhouse, Lever), Playwright is required
+
+**Error: `Missing libraries: libwebpmux.so.3, libx264.so` (Linux/WSL)**
+- Install system dependencies: `sudo python3 -m playwright install-deps`
+- Or install manually: `sudo apt-get install -y libwebp-dev libx264-dev`
+- These are system libraries required for browser rendering
+
+**Error: `Failed to extract with requests`**
+- The job board may require JavaScript rendering
+- Use the `--use-playwright` flag: `ats extract-skills <url> --use-playwright`
+- Ensure Playwright is installed and browsers are set up
+
+**Error: Job content not extracted correctly**
+- Some job boards have custom HTML structures
+- Try using `--use-playwright` for better extraction
+- For best results, use board-specific extractors (Greenhouse, Lever, LinkedIn are supported)
+
+## Workflow Example
+
+Here's a complete workflow example:
+
+1. **Convert your LaTeX resume:**
+   ```bash
+   ats convert-latex templates/resume.tex
+   # Output saved to data/resume.json
+   ```
+
+2. **Find a job and extract skills:**
+   ```bash
+   # From a job URL (recommended)
+   ats extract-skills "https://boards.greenhouse.io/company/jobs/123456"
+   
+   # Or from a file
+   ats extract-skills job.txt
+   # Output saved to data/job_skills.json
+   ```
+
+3. **Check job fit:**
+   ```bash
+   ats match-job
+   # Uses data/resume.json and data/job_skills.json by default
+   ```
+
+4. **Generate resume improvements:**
+   ```bash
+   ats rewrite-resume
+   # Output saved to data/resume_updated.json
+   ```
+   - Checks for reusable resumes from similar jobs
+   - Review reasoning chains for each bullet
+   - Select variations (1-4) or approve/reject
+   - Optionally provide feedback for regeneration
+
+5. **Generate final PDF:**
+   ```bash
+   ats render-pdf
+   # Output saved to data/resume.pdf
+   ```
+
+## Contributing
+
+1. Create a feature branch: `git checkout -b feature/your-feature-name`
+2. Make your changes
+3. Write/update tests
+4. Ensure tests pass: `pytest`
+5. Ensure code coverage: `pytest --cov=src --cov-fail-under=80`
+6. Submit a pull request
+
+## License
+
+[Add your license here]
+
+## Support
+
+For issues, questions, or contributions, please open an issue on GitHub.
