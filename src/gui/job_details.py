@@ -51,8 +51,14 @@ def _categorize_skills(skills: List[str]) -> Dict[str, List[str]]:
             if category == "Other":
                 continue
             
-            keywords = patterns["keywords"]
-            exclude = patterns.get("exclude", [])
+            # Handle both dict format (new) and list format (old)
+            if isinstance(patterns, dict):
+                keywords = patterns.get("keywords", [])
+                exclude = patterns.get("exclude", [])
+            else:
+                # Old format - list of keywords
+                keywords = patterns
+                exclude = []
             
             # Skip if skill contains excluded terms (unless it's a very specific match)
             if exclude and any(exc in skill_lower for exc in exclude):
