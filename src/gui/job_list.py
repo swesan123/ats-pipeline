@@ -26,6 +26,20 @@ def render_job_list(db: Database):
     fit_scores = {}
     try:
         resume = db.get_latest_resume()
+        # If resume not in DB, try loading from file
+        if not resume:
+            resume_path = Path("data/resume.json")
+            if resume_path.exists():
+                try:
+                    import json
+                    from src.models.resume import Resume
+                    with open(resume_path, 'r', encoding='utf-8') as f:
+                        resume_data = json.load(f)
+                    resume = Resume.model_validate(resume_data)
+                except Exception as e:
+                    st.warning(f"Could not load resume from file: {e}")
+                    resume = None
+        
         if resume:
             ontology = SkillOntology()
             matcher = SkillMatcher(ontology)
