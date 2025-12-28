@@ -98,6 +98,18 @@ job*.json
 output/
 temp/
 
+# Resumes directory
+resumes/
+
+# Credentials and API keys (NEVER commit these!)
+*credentials*.json
+*service_account*.json
+job-applications*.json
+*.key
+*.pem
+*.p12
+*.pfx
+
 # OS
 Thumbs.db
 .DS_Store

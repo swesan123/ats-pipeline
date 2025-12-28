@@ -814,6 +814,55 @@ The pipeline includes a project library system that allows you to store all your
 
 The `rewrite-resume` and `apply` commands automatically select relevant projects from your library when generating resumes.
 
+## Security
+
+**IMPORTANT: Never commit credentials or API keys to the repository!**
+
+### Protected Files
+
+The following files and directories are automatically ignored by git (see `.gitignore`):
+- `.env` - Environment variables (including `OPENAI_API_KEY`)
+- `*credentials*.json` - Google service account credentials
+- `*service_account*.json` - Service account files
+- `job-applications*.json` - Job application credentials
+- `resumes/` - Generated resume files (may contain personal information)
+- `data/` - Local data files (resumes, job skills, etc.)
+- `*.db`, `*.sqlite` - Database files
+- `*.key`, `*.pem`, `*.p12`, `*.pfx` - Private keys and certificates
+
+### Best Practices
+
+1. **API Keys**: Store API keys in `.env` file (already in `.gitignore`):
+   ```bash
+   echo "OPENAI_API_KEY=your-key-here" > .env
+   ```
+
+2. **Google Sheets Credentials**: 
+   - Store service account JSON files outside the repository
+   - Use absolute paths when referencing credentials
+   - Never commit credential files to git
+
+3. **Resume Files**: 
+   - Generated resumes are stored in `resumes/` directory (automatically ignored)
+   - Resume JSON files in `data/` are also ignored
+
+4. **If You Accidentally Committed Credentials**:
+   - **Immediately rotate/revoke the exposed credentials**
+   - Remove the file from git: `git rm --cached <file>`
+   - Update `.gitignore` to prevent future commits
+   - Consider using `git filter-branch` or BFG Repo-Cleaner to remove from history
+
+### Verifying No Secrets Are Committed
+
+Before pushing, check for sensitive files:
+```bash
+# Check for credential files
+git ls-files | grep -E "(credentials|service_account|\.key|\.pem)"
+
+# Check for API keys in code
+grep -r "sk-[a-zA-Z0-9]" . --exclude-dir=venv --exclude-dir=.git
+```
+
 ## Contributing
 
 1. Create a feature branch: `git checkout -b feature/your-feature-name`
