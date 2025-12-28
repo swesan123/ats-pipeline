@@ -126,6 +126,39 @@ Before using the pipeline, ensure you have:
 
 ## Quick Start
 
+### 0. Set Up User Skills (Recommended)
+
+To prevent the system from making up skills, create a `data/user_skills.json` file listing all your skills and which projects use them:
+
+```bash
+# Copy the example template
+cp data/user_skills.json.example data/user_skills.json
+
+# Edit the file to list your skills and projects
+nano data/user_skills.json  # or use your preferred editor
+```
+
+The user skills file format:
+```json
+{
+  "skills": [
+    {
+      "name": "Python",
+      "category": "Languages",
+      "projects": ["Project Name 1", "Project Name 2"],
+      "proficiency_level": "advanced"
+    }
+  ]
+}
+```
+
+**Why use user skills?**
+- Prevents skill fabrication: Only skills you've actually used are added to bullets
+- Project-specific filtering: Skills are only added to projects where they're relevant
+- Ensures accuracy: The system won't add skills you don't have
+
+**Note:** If you don't provide a user skills file, the system may add skills that don't match your actual experience. It's recommended to create this file before running `rewrite-resume` or `apply`.
+
 ### 1. Convert LaTeX Resume to JSON
 
 First, convert your LaTeX resume to JSON format. Output is automatically saved to `data/resume.json`:
@@ -184,13 +217,13 @@ ats match-job --resume-json data/resume.json --job-json data/job_skills.json
 Generate 4 variations for each bullet that needs adjustment. Output is automatically saved to `data/resume_updated.json`:
 
 ```bash
-ats rewrite-resume
+ats rewrite-resume --user-skills data/user_skills.json
 ```
 
 Or specify custom paths:
 
 ```bash
-ats rewrite-resume --resume-json data/resume.json --job-json data/job_skills.json
+ats rewrite-resume --resume-json data/resume.json --job-json data/job_skills.json --user-skills data/user_skills.json
 ```
 
 **Important:** The command uses options (flags), not positional arguments. There is no `--output` option - output is always saved to `data/resume_updated.json`.
@@ -198,6 +231,7 @@ ats rewrite-resume --resume-json data/resume.json --job-json data/job_skills.jso
 Options:
 - `--resume-json`: Resume JSON file (default: `data/resume.json`)
 - `--job-json`: Job skills JSON file (default: `data/job_skills.json`)
+- `--user-skills`: User skills JSON file to prevent skill fabrication (recommended)
 - `--reuse-threshold`: Minimum fit score to reuse existing resume (default: 0.90)
 - `--similarity-threshold`: Minimum job similarity to consider reuse (default: 0.85)
 - `--force-new`: Force generation of new resume even if reuse is available
@@ -258,6 +292,36 @@ ats extract-skills job_description.txt
 ats extract-skills "https://jobs.lever.co/company/123" --use-playwright
 ```
 
+### `apply` ⭐ **NEW - Full Application Flow**
+Run the entire application flow in one command: extract-skills → match-job → rewrite-resume → render-pdf.
+
+```bash
+ats apply <job_url> [--resume-json <path>] [--user-skills <path>] [--skip-match] [--use-playwright] [--reuse-threshold <float>] [--similarity-threshold <float>] [--force-new]
+```
+
+Options:
+- `job_url`: Job posting URL (required)
+- `--resume-json`: Resume JSON file (default: `data/resume.json`)
+- `--user-skills`: User skills JSON file to prevent skill fabrication (default: `data/user_skills.json`)
+- `--skip-match`: Skip the match-job step (optional)
+- `--use-playwright`: Force use of Playwright for scraping
+- `--reuse-threshold`: Minimum fit score to reuse existing resume (default: 0.90)
+- `--similarity-threshold`: Minimum job similarity to consider reuse (default: 0.85)
+- `--force-new`: Force generation of new resume even if reuse is available
+
+Example:
+```bash
+ats apply "https://boards.greenhouse.io/company/jobs/123456" --user-skills data/user_skills.json
+```
+
+**User Skills File:**
+To prevent the system from making up skills, create a `data/user_skills.json` file listing all your skills and which projects use them. See `data/user_skills.json.example` for the format.
+
+The user skills file ensures that:
+- Only skills you've actually used are added to bullets
+- Skills are only added to projects where they're relevant
+- No fabrication of experience or skills
+
 ### `match-job`
 Calculate job fit score and show gap analysis. Uses `data/resume.json` and `data/job_skills.json` by default.
 
@@ -274,13 +338,14 @@ Options:
 Generate resume rewrite proposals with interactive approval. Output is saved to `data/resume_updated.json`.
 
 ```bash
-ats rewrite-resume [--resume-json <path>] [--job-json <path>] [--ontology <skills.json>] [--reuse-threshold <float>] [--similarity-threshold <float>] [--force-new]
+ats rewrite-resume [--resume-json <path>] [--job-json <path>] [--ontology <skills.json>] [--user-skills <path>] [--reuse-threshold <float>] [--similarity-threshold <float>] [--force-new]
 ```
 
 Options:
 - `--resume-json`: Resume JSON file (default: `data/resume.json`)
 - `--job-json`: Job skills JSON file (default: `data/job_skills.json`)
 - `--ontology`: Optional skill ontology JSON file
+- `--user-skills`: User skills JSON file to prevent skill fabrication
 - `--reuse-threshold`: Minimum fit score to reuse existing resume (default: 0.90)
 - `--similarity-threshold`: Minimum job similarity to consider reuse (default: 0.85)
 - `--force-new`: Force generation of new resume even if reuse is available
@@ -451,7 +516,41 @@ pytest --cov=src --cov-report=html
 
 ## Workflow Example
 
-Here's a complete workflow example:
+### Quick Workflow (Recommended): Using `apply` Command
+
+The easiest way to process a job application is using the `apply` command, which runs the entire flow in one step:
+
+1. **Set up user skills (one-time setup):**
+   ```bash
+   cp data/user_skills.json.example data/user_skills.json
+   # Edit data/user_skills.json with your skills and projects
+   ```
+
+2. **Convert your LaTeX resume (one-time setup):**
+   ```bash
+   ats convert-latex templates/resume.tex
+   # Output saved to data/resume.json
+   ```
+
+3. **Run the entire flow for a job:**
+   ```bash
+   ats apply "https://boards.greenhouse.io/company/jobs/123456" --user-skills data/user_skills.json
+   ```
+   
+   This single command will:
+   - Extract skills from the job URL
+   - Match your resume against the job (optional, can skip with `--skip-match`)
+   - Generate resume rewrite proposals with interactive approval
+   - Render the final PDF
+   
+   **Output files:**
+   - `data/job_skills.json` - Extracted job skills
+   - `data/resume_updated.json` - Updated resume after approval
+   - `data/resume.pdf` - Final PDF resume
+
+### Step-by-Step Workflow (Manual)
+
+If you prefer to run each step individually:
 
 1. **Convert your LaTeX resume:**
    ```bash
@@ -477,7 +576,7 @@ Here's a complete workflow example:
 
 4. **Generate resume improvements:**
    ```bash
-   ats rewrite-resume
+   ats rewrite-resume --user-skills data/user_skills.json
    # Output saved to data/resume_updated.json
    ```
    - Checks for reusable resumes from similar jobs

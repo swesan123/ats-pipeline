@@ -5,18 +5,19 @@ from typing import Dict, List, Tuple, Optional
 from openai import OpenAI
 from src.models.resume import Resume, Bullet, Reasoning, Justification
 from src.models.job import JobMatch
-from src.models.skills import SkillOntology
+from src.models.skills import SkillOntology, UserSkills
 
 
 class ResumeRewriter:
     """Generate resume bullet variations with reasoning chains."""
     
-    def __init__(self, api_key: Optional[str] = None):
-        """Initialize rewriter with OpenAI client."""
+    def __init__(self, api_key: Optional[str] = None, user_skills: Optional[UserSkills] = None):
+        """Initialize rewriter with OpenAI client and optional user skills."""
         api_key = api_key or os.getenv("OPENAI_API_KEY")
         if not api_key:
             raise ValueError("OpenAI API key required. Set OPENAI_API_KEY environment variable.")
         self.client = OpenAI(api_key=api_key)
+        self.user_skills = user_skills
     
     def generate_variations(
         self,
@@ -35,11 +36,13 @@ class ResumeRewriter:
         
         # Build a map of bullet_id to project context (if it's a project bullet)
         project_context_map = {}
+        project_name_map = {}
         bullet_id = 0
         for project in resume.projects:
             for bullet in project.bullets:
                 bullet_key = f"proj_{project.name}_{bullet_id}"
                 project_context_map[bullet_key] = project.tech_stack
+                project_name_map[bullet_key] = project.name
                 bullet_id += 1
         
         for bullet_id, bullet in bullets_to_adjust.items():
@@ -48,8 +51,9 @@ class ResumeRewriter:
             
             # Step 2: Generate variations with reasoning (pass project context if applicable)
             project_context = project_context_map.get(bullet_id)
+            project_name = project_name_map.get(bullet_id)
             variations = self._generate_variations_with_reasoning(
-                bullet, reasoning, job_match, ontology, project_context=project_context
+                bullet, reasoning, job_match, ontology, project_context=project_context, project_name=project_name
             )
             
             proposals[bullet_id] = (reasoning, variations)
@@ -256,6 +260,7 @@ Return as JSON:
         job_match: JobMatch,
         ontology: SkillOntology,
         project_context: Optional[List[str]] = None,
+        project_name: Optional[str] = None,
     ) -> List[Bullet]:
         """Generate 4 variations based on reasoning.
         
@@ -265,8 +270,9 @@ Return as JSON:
             job_match: Job match information
             ontology: Skill ontology
             project_context: Optional project tech stack to restrict skill additions
+            project_name: Optional project name for user skills filtering
         """
-        prompt = self._build_variation_prompt(bullet, reasoning, job_match, project_context=project_context)
+        prompt = self._build_variation_prompt(bullet, reasoning, job_match, project_context=project_context, project_name=project_name)
         
         response = self.client.chat.completions.create(
             model="gpt-4o-mini",
@@ -327,17 +333,31 @@ Return as JSON:
         return variations[:4]
     
     def _build_variation_prompt(
-        self, bullet: Bullet, reasoning: Reasoning, job_match: JobMatch, project_context: Optional[List[str]] = None
+        self, bullet: Bullet, reasoning: Reasoning, job_match: JobMatch, project_context: Optional[List[str]] = None, project_name: Optional[str] = None
     ) -> str:
         """Build prompt for variation generation."""
         context_note = ""
         if project_context:
             context_note = f"\n\nIMPORTANT - Project Context: This bullet is part of a project with tech stack: {', '.join(project_context)}. Only add skills that are relevant to this project's tech stack. Do NOT add unrelated skills (e.g., do not add Golang/Swift/Kotlin to a Python/ML project unless they are actually used in the project)."
         
+        # Add user skills restriction if available
+        user_skills_note = ""
+        if self.user_skills:
+            # Get allowed skills for this project (if project_name provided)
+            if project_name:
+                allowed_skills = self.user_skills.get_skills_for_project(project_name)
+                if allowed_skills:
+                    user_skills_note = f"\n\nCRITICAL - Allowed Skills Only: You may ONLY use these skills that are verified for this project: {', '.join(allowed_skills)}. Do NOT add any skills that are not in this list. If a required job skill is not in this list, do NOT add it to the bullet."
+            else:
+                # For non-project bullets, use all user skills
+                all_user_skills = list(self.user_skills.get_all_skill_names())
+                if all_user_skills:
+                    user_skills_note = f"\n\nCRITICAL - Allowed Skills Only: You may ONLY use these verified skills: {', '.join(all_user_skills[:20])}. Do NOT add any skills that are not in this list. If a required job skill is not in this list, do NOT add it to the bullet."
+        
         return f"""Generate 4 variations of this resume bullet based on the reasoning chain.
 
 Original Bullet: {bullet.text}
-Current Skills: {', '.join(bullet.skills)}{context_note}
+Current Skills: {', '.join(bullet.skills)}{context_note}{user_skills_note}
 
 Reasoning:
 - Problem: {reasoning.problem_identification}
@@ -362,6 +382,7 @@ Each variation must:
 - Include skills that are actually demonstrated and relevant to the project/context
 - Have one clear claim per bullet
 - For project bullets: Only use skills that match the project's tech stack
+- NEVER add skills that are not in the allowed skills list (if provided)
 
 Return as JSON:
 {{

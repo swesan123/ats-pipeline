@@ -1,6 +1,6 @@
 """Skill ontology and skill models."""
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 from pydantic import BaseModel, Field
 
 
@@ -60,4 +60,44 @@ class SkillOntology(BaseModel):
         """Get all skills in a category."""
         skill_names = self.taxonomy.get(category, [])
         return [self.canonical_skills[name] for name in skill_names if name in self.canonical_skills]
+
+
+class UserSkill(BaseModel):
+    """A user-provided skill with project associations."""
+    
+    name: str = Field(..., description="Skill name")
+    category: str = Field(..., description="Skill category (e.g., Languages, ML/AI, Backend/DB)")
+    projects: List[str] = Field(default_factory=list, description="List of project names that use this skill")
+    proficiency_level: Optional[str] = Field(None, description="Proficiency level (beginner/intermediate/advanced/expert)")
+
+
+class UserSkills(BaseModel):
+    """User-provided skills library to prevent skill fabrication."""
+    
+    skills: List[UserSkill] = Field(default_factory=list, description="List of user skills")
+    
+    def get_all_skill_names(self) -> Set[str]:
+        """Get all skill names as a set (normalized)."""
+        return {skill.name.lower().strip() for skill in self.skills}
+    
+    def get_skills_for_project(self, project_name: str) -> List[str]:
+        """Get all skills associated with a specific project."""
+        project_skills = []
+        for skill in self.skills:
+            if project_name in skill.projects:
+                project_skills.append(skill.name)
+        return project_skills
+    
+    def has_skill(self, skill_name: str) -> bool:
+        """Check if user has this skill (case-insensitive)."""
+        normalized = skill_name.lower().strip()
+        return normalized in self.get_all_skill_names()
+    
+    def get_skill(self, skill_name: str) -> Optional[UserSkill]:
+        """Get a skill by name (case-insensitive)."""
+        normalized = skill_name.lower().strip()
+        for skill in self.skills:
+            if skill.name.lower().strip() == normalized:
+                return skill
+        return None
 

@@ -12,7 +12,7 @@ from src.approval.interactive_approval import ResumeApprovalWorkflow
 from src.rendering.latex_renderer import LaTeXRenderer
 from src.models.resume import Resume, ProjectItem
 from src.models.job import JobPosting, JobSkills
-from src.models.skills import SkillOntology
+from src.models.skills import SkillOntology, UserSkills
 from src.db.database import Database
 from src.projects.project_library import ProjectLibrary
 from src.projects.project_selector import ProjectSelector
@@ -205,10 +205,11 @@ def match_job(resume_json, job_json, ontology):
 @click.option('--resume-json', type=click.Path(), default='data/resume.json', help='Resume JSON file (default: data/resume.json)')
 @click.option('--job-json', type=click.Path(), default='data/job_skills.json', help='Job skills JSON file (default: data/job_skills.json)')
 @click.option('--ontology', type=click.Path(), help='Skill ontology JSON file')
+@click.option('--user-skills', type=click.Path(), help='User skills JSON file (prevents skill fabrication)')
 @click.option('--reuse-threshold', type=float, default=0.90, help='Minimum fit score to reuse existing resume (default: 0.90)')
 @click.option('--similarity-threshold', type=float, default=0.85, help='Minimum job similarity to consider reuse (default: 0.85)')
 @click.option('--force-new', is_flag=True, help='Force generation of new resume even if reuse is available')
-def rewrite_resume(resume_json, job_json, ontology, reuse_threshold, similarity_threshold, force_new):
+def rewrite_resume(resume_json, job_json, ontology, user_skills, reuse_threshold, similarity_threshold, force_new):
     """Generate resume rewrite proposals with interactive approval. Output is saved to data/resume_updated.json"""
     try:
         # Create data directory if it doesn't exist
@@ -319,8 +320,8 @@ def rewrite_resume(resume_json, job_json, ontology, reuse_threshold, similarity_
         
         click.echo("Generating resume rewrite proposals...")
         
-        # Generate variations
-        rewriter = ResumeRewriter()
+        # Generate variations (with user skills restriction if provided)
+        rewriter = ResumeRewriter(user_skills=user_skills_obj)
         proposals = rewriter.generate_variations(resume, job_match, skill_ontology)
         
         if not proposals:
@@ -467,6 +468,169 @@ def select_projects(job_json, max_projects, min_score, output):
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump([p.model_dump() for p in selected], f, indent=2, default=str)
         click.echo(f"\n✓ Saved selected projects to {output_path}")
+    except Exception as e:
+        click.echo(f"✗ Error: {e}", err=True)
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
+@cli.command()
+@click.argument('job_url')
+@click.option('--resume-json', type=click.Path(), default='data/resume.json', help='Resume JSON file (default: data/resume.json)')
+@click.option('--user-skills', type=click.Path(), default='data/user_skills.json', help='User skills JSON file (default: data/user_skills.json)')
+@click.option('--skip-match', is_flag=True, help='Skip match-job step (optional)')
+@click.option('--use-playwright', is_flag=True, help='Force use of Playwright for scraping')
+@click.option('--reuse-threshold', type=float, default=0.90, help='Minimum fit score to reuse existing resume (default: 0.90)')
+@click.option('--similarity-threshold', type=float, default=0.85, help='Minimum job similarity to consider reuse (default: 0.85)')
+@click.option('--force-new', is_flag=True, help='Force generation of new resume even if reuse is available')
+def apply(job_url, resume_json, user_skills, skip_match, use_playwright, reuse_threshold, similarity_threshold, force_new):
+    """Run the entire application flow: extract-skills → match-job → rewrite-resume → render-pdf"""
+    try:
+        data_dir = Path("data")
+        data_dir.mkdir(exist_ok=True)
+        
+        job_skills_path = data_dir / "job_skills.json"
+        resume_updated_path = data_dir / "resume_updated.json"
+        pdf_path = data_dir / "resume.pdf"
+        
+        click.echo(f"\n{'='*80}")
+        click.echo("ATS PIPELINE - FULL APPLICATION FLOW")
+        click.echo(f"{'='*80}\n")
+        
+        # Step 1: Extract skills
+        click.echo("Step 1/4: Extracting skills from job posting...")
+        from src.extractors.job_url_scraper import JobURLScraper
+        from src.extractors.job_skills import JobSkillExtractor
+        
+        scraper = JobURLScraper(use_playwright=use_playwright)
+        job_data = scraper.extract_job_content(job_url)
+        
+        job_posting = JobPosting(
+            company=job_data['company'],
+            title=job_data['title'],
+            location=job_data.get('location'),
+            description=job_data['description'],
+            source_url=job_data['source_url'],
+        )
+        
+        click.echo(f"  Company: {job_posting.company}")
+        click.echo(f"  Title: {job_posting.title}")
+        
+        extractor = JobSkillExtractor()
+        job_skills = extractor.extract_skills(job_posting)
+        
+        job_output = {
+            'job_posting': job_posting.model_dump(),
+            'job_skills': job_skills.model_dump()
+        }
+        
+        with open(job_skills_path, 'w', encoding='utf-8') as f:
+            json.dump(job_output, f, indent=2, default=str)
+        
+        click.echo(f"✓ Skills extracted to {job_skills_path}")
+        click.echo(f"  Required: {len(job_skills.required_skills)} skills")
+        click.echo(f"  Preferred: {len(job_skills.preferred_skills)} skills")
+        click.echo()
+        
+        # Step 2: Match job (optional)
+        if not skip_match:
+            click.echo("Step 2/4: Matching resume to job requirements...")
+            resume_path = Path(resume_json)
+            if not resume_path.exists():
+                click.echo(f"✗ Error: Resume file not found: {resume_path}", err=True)
+                sys.exit(1)
+            
+            with open(resume_path, 'r', encoding='utf-8') as f:
+                resume = Resume.model_validate_json(f.read())
+            
+            skill_ontology = SkillOntology()
+            matcher = SkillMatcher(skill_ontology)
+            job_match = matcher.match_job(resume, job_skills)
+            
+            click.echo(f"  Fit Score: {job_match.fit_score:.1%}")
+            click.echo(f"  Matching Skills: {len(job_match.matching_skills)}")
+            click.echo(f"  Missing Required: {len(job_match.skill_gaps.get('required_missing', []))}")
+            click.echo()
+        else:
+            click.echo("Step 2/4: Skipping match-job (--skip-match)\n")
+        
+        # Step 3: Rewrite resume
+        click.echo("Step 3/4: Rewriting resume with interactive approval...")
+        
+        # Load user skills if provided
+        user_skills_obj = None
+        if user_skills and Path(user_skills).exists():
+            with open(user_skills, 'r', encoding='utf-8') as f:
+                user_skills_data = json.load(f)
+                user_skills_obj = UserSkills.model_validate(user_skills_data)
+                click.echo(f"  Using {len(user_skills_obj.skills)} user-provided skills (prevents fabrication)")
+        elif user_skills:
+            click.echo(f"  ⚠ Warning: User skills file not found: {user_skills}", err=True)
+        
+        # Call rewrite_resume logic (reuse existing function)
+        resume_path = Path(resume_json)
+        if not resume_path.exists():
+            click.echo(f"✗ Error: Resume file not found: {resume_path}", err=True)
+            sys.exit(1)
+        
+        with open(resume_path, 'r', encoding='utf-8') as f:
+            resume = Resume.model_validate_json(f.read())
+        
+        skill_ontology = SkillOntology()
+        
+        # Select relevant projects from library
+        try:
+            selector = ProjectSelector()
+            library_projects = selector.library.get_all_projects()
+            if library_projects:
+                click.echo(f"  Found {len(library_projects)} project(s) in library. Selecting most relevant...")
+                selected_projects = selector.select_projects(job_skills, max_projects=4, min_score=0.3)
+                if selected_projects:
+                    click.echo(f"  Selected {len(selected_projects)} project(s) for this job")
+                    resume.projects = selected_projects
+        except Exception as e:
+            click.echo(f"  Note: Project selection skipped: {e}")
+        
+        # Match job
+        matcher = SkillMatcher(skill_ontology)
+        job_match = matcher.match_job(resume, job_skills)
+        
+        click.echo(f"  Job fit score: {job_match.fit_score:.1%}")
+        
+        # Generate variations
+        rewriter = ResumeRewriter(user_skills=user_skills_obj)
+        proposals = rewriter.generate_variations(resume, job_match, skill_ontology)
+        
+        if not proposals:
+            click.echo("  No bullets need adjustment.")
+        else:
+            click.echo(f"  Found {len(proposals)} bullets to adjust.")
+            workflow = ResumeApprovalWorkflow(rewriter)
+            resume = workflow.process_resume_rewrite(resume, proposals)
+        
+        # Save updated resume
+        with open(resume_updated_path, 'w', encoding='utf-8') as f:
+            json.dump(resume.model_dump(), f, indent=2, default=str)
+        
+        click.echo(f"✓ Updated resume saved to {resume_updated_path}")
+        click.echo()
+        
+        # Step 4: Render PDF
+        click.echo("Step 4/4: Rendering PDF...")
+        renderer = LaTeXRenderer()
+        pdf_path = renderer.render_pdf(resume, pdf_path)
+        
+        click.echo(f"✓ PDF generated: {pdf_path}")
+        click.echo()
+        click.echo(f"{'='*80}")
+        click.echo("✓ APPLICATION FLOW COMPLETE")
+        click.echo(f"{'='*80}")
+        click.echo(f"\nOutput files:")
+        click.echo(f"  - Job skills: {job_skills_path}")
+        click.echo(f"  - Updated resume: {resume_updated_path}")
+        click.echo(f"  - PDF: {pdf_path}")
+        
     except Exception as e:
         click.echo(f"✗ Error: {e}", err=True)
         import traceback
