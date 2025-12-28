@@ -35,8 +35,12 @@ def _extract_job_info_from_text(text: str) -> tuple[str, str]:
     # Pattern 1: "Title at Company" (most common LinkedIn format)
     # Find all occurrences of "at [Company]" and extract the preceding title
     # Look for the pattern: (Title) + "at" + (Company)
-    # Company should be 1-2 words max
-    matches = list(re.finditer(r'\s+at\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)\s*(?:·|$|\n|Toronto|New York|\(Hybrid\)|\(Remote\)|Show|AI|Engineer|Developer)', text_clean, re.IGNORECASE))
+    # Try single word company first (most common), then two words
+    # Stop immediately after company name
+    matches = list(re.finditer(r'\s+at\s+([A-Z][a-zA-Z]+)\s+(?:·|AI|Engineer|Developer|Toronto|New York|\(Hybrid\)|\(Remote\)|Show|$|\n)', text_clean, re.IGNORECASE))
+    if not matches:
+        # Try two-word company names
+        matches = list(re.finditer(r'\s+at\s+([A-Z][a-zA-Z]+\s+[A-Z][a-zA-Z]+)\s+(?:·|AI|Engineer|Developer|Toronto|New York|\(Hybrid\)|\(Remote\)|Show|$|\n)', text_clean, re.IGNORECASE))
     for match in matches:
         # Get text before "at"
         start_pos = match.start()
