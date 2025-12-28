@@ -30,9 +30,16 @@ def create_tables(conn: sqlite3.Connection) -> None:
             source_url TEXT,
             date_posted TIMESTAMP,
             job_skills_json TEXT,
+            status TEXT DEFAULT 'New',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    
+    # Add status column if it doesn't exist (for existing databases)
+    try:
+        cursor.execute("ALTER TABLE jobs ADD COLUMN status TEXT DEFAULT 'New'")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
     
     # Job matches table
     cursor.execute("""

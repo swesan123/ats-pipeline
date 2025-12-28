@@ -63,6 +63,20 @@ class Database:
             return Resume.model_validate_json(row["resume_json"])
         return None
     
+    def get_latest_resume_id(self) -> Optional[int]:
+        """Get the ID of the most recent resume."""
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT id FROM resumes
+            ORDER BY updated_at DESC
+            LIMIT 1
+        """)
+        row = cursor.fetchone()
+        
+        if row:
+            return row["id"]
+        return None
+    
     def save_job(self, job: JobPosting, job_skills: Optional[JobSkills] = None) -> int:
         """Save job posting to database. Returns job ID."""
         cursor = self.conn.cursor()
@@ -115,11 +129,36 @@ class Database:
         """List all jobs."""
         cursor = self.conn.cursor()
         cursor.execute("""
-            SELECT id, company, title, location, date_posted, created_at
+            SELECT id, company, title, location, date_posted, status, created_at
             FROM jobs
             ORDER BY created_at DESC
         """)
         return [dict(row) for row in cursor.fetchall()]
+    
+    def update_job_status(self, job_id: int, status: str) -> None:
+        """Update job status."""
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            UPDATE jobs
+            SET status = ?
+            WHERE id = ?
+        """, (status, job_id))
+        self.conn.commit()
+    
+    def get_latest_job_match_fit_score(self, job_id: int) -> Optional[float]:
+        """Get the latest fit score for a job from job_matches table."""
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT fit_score
+            FROM job_matches
+            WHERE job_id = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+        """, (job_id,))
+        row = cursor.fetchone()
+        if row:
+            return row["fit_score"]
+        return None
     
     def save_job_match(
         self, 

@@ -95,6 +95,44 @@ def _categorize_skills(skills: List[str]) -> Dict[str, List[str]]:
     return {cat: skills_list for cat, skills_list in categorized.items() if skills_list}
 
 
+def _display_skills_by_category(skills: List[str]):
+    """Display skills organized by category."""
+    categorized = _categorize_skills(skills)
+    
+    if not categorized:
+        st.write("No skills to display")
+        return
+    
+    # Display each category
+    for category, skills_list in categorized.items():
+        if category == "Other" and len(categorized) > 1:
+            # Only show "Other" if there are other categories too
+            with st.expander(f"📦 {category} ({len(skills_list)})", expanded=False):
+                for skill in skills_list:
+                    st.write(f"• {skill}")
+        else:
+            # Use expandable sections for categories with many skills
+            if len(skills_list) > 5:
+                with st.expander(f"📦 {category} ({len(skills_list)})", expanded=True):
+                    # Split into columns if many skills
+                    if len(skills_list) > 10:
+                        cols = st.columns(2)
+                        mid = len(skills_list) // 2
+                        with cols[0]:
+                            for skill in skills_list[:mid]:
+                                st.write(f"• {skill}")
+                        with cols[1]:
+                            for skill in skills_list[mid:]:
+                                st.write(f"• {skill}")
+                    else:
+                        for skill in skills_list:
+                            st.write(f"• {skill}")
+            else:
+                st.write(f"**{category}:**")
+                for skill in skills_list:
+                    st.write(f"• {skill}")
+
+
 def render_job_details(db: Database, job: dict):
     """Render job details panel."""
     st.header("Job Details")
@@ -241,44 +279,6 @@ def _handle_generate_resume(db: Database, job_id: int):
                 st.write("**Recommendations:**")
                 for rec in job_match.recommendations:
                     st.write(f"- {rec}")
-
-
-def _display_skills_by_category(skills: List[str]):
-    """Display skills organized by category."""
-    categorized = _categorize_skills(skills)
-    
-    if not categorized:
-        st.write("No skills to display")
-        return
-    
-    # Display each category
-    for category, skills_list in categorized.items():
-        if category == "Other" and len(categorized) > 1:
-            # Only show "Other" if there are other categories too
-            with st.expander(f"📦 {category} ({len(skills_list)})", expanded=False):
-                for skill in skills_list:
-                    st.write(f"• {skill}")
-        else:
-            # Use expandable sections for categories with many skills
-            if len(skills_list) > 5:
-                with st.expander(f"📦 {category} ({len(skills_list)})", expanded=True):
-                    # Split into columns if many skills
-                    if len(skills_list) > 10:
-                        cols = st.columns(2)
-                        mid = len(skills_list) // 2
-                        with cols[0]:
-                            for skill in skills_list[:mid]:
-                                st.write(f"• {skill}")
-                        with cols[1]:
-                            for skill in skills_list[mid:]:
-                                st.write(f"• {skill}")
-                    else:
-                        for skill in skills_list:
-                            st.write(f"• {skill}")
-            else:
-                st.write(f"**{category}:**")
-                for skill in skills_list:
-                    st.write(f"• {skill}")
 
 
 def _handle_view_match_details(db: Database, job_id: int):
