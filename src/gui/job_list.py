@@ -86,9 +86,9 @@ def render_job_list(db: Database):
     display_df = df[['company', 'title', 'Fit Score', 'Status', 'created_at']].copy()
     
     # Add instructions for status editing
-    st.caption("Tip: Click on the Status column dropdown to change a job's status")
+    st.caption("Tip: Double-click on a Status cell to change it, or use the dropdown below the table")
     
-    # Display table with editable status
+    # Display table (read-only for selection)
     selected_rows = st.dataframe(
         display_df,
         column_config={
@@ -98,12 +98,6 @@ def render_job_list(db: Database):
                 max_value=1.0,
                 format="%.2f%%",
             ),
-            "Status": st.column_config.SelectboxColumn(
-                "Status",
-                options=status_options,
-                width="medium",
-                required=True,
-            ),
             "created_at": st.column_config.DatetimeColumn("Date Added"),
         },
         on_select="rerun",
@@ -112,15 +106,26 @@ def render_job_list(db: Database):
         key="job_list_table",
     )
     
-    # Handle status updates from edited rows
-    if hasattr(selected_rows, 'edited_rows') and selected_rows.edited_rows:
-        for idx, changes in selected_rows.edited_rows.items():
-            if 'Status' in changes:
-                job_id = df.iloc[idx]['id']
-                new_status = changes['Status']
-                db.update_job_status(job_id, new_status)
-                st.success(f"Updated status to: {new_status}")
-                st.rerun()
+    # Add status editor below table for selected row
+    if selected_rows.selection.rows:
+        selected_idx = selected_rows.selection.rows[0]
+        selected_job_id = df.iloc[selected_idx]['id']
+        current_status = df.iloc[selected_idx]['Status']
+        
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            new_status = st.selectbox(
+                f"Change status for {df.iloc[selected_idx]['company']} - {df.iloc[selected_idx]['title']}",
+                options=status_options,
+                index=status_options.index(current_status) if current_status in status_options else 0,
+                key=f"status_select_{selected_job_id}",
+            )
+        with col2:
+            if st.button("Update Status", key=f"update_status_{selected_job_id}"):
+                if new_status != current_status:
+                    db.update_job_status(selected_job_id, new_status)
+                    st.success(f"Updated status to: {new_status}")
+                    st.rerun()
     
     # Get selected job
     if selected_rows.selection.rows:
