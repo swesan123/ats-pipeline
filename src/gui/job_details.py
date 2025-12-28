@@ -218,8 +218,52 @@ def _handle_view_match_details(db: Database, job_id: int):
     
     # Display match details
     st.subheader("📊 Match Details")
-    st.write(f"**Job:** {job['title']} at {job['company']}")
+    st.write(f"**Job:** {job.title} at {job.company}")
+    if job.location:
+        st.write(f"**Location:** {job.location}")
     st.write(f"**Fit Score:** {job_match.fit_score:.1%}")
+    
+    st.divider()
+    
+    # Display job requirements in organized format
+    st.subheader("📋 Job Requirements")
+    
+    if job_skills.required_skills:
+        st.write("**Required Skills:**")
+        # Group skills by category for better readability
+        # Use expandable sections or columns for long lists
+        if len(job_skills.required_skills) > 10:
+            # Split into chunks for better readability
+            cols = st.columns(2)
+            mid = len(job_skills.required_skills) // 2
+            with cols[0]:
+                for skill in job_skills.required_skills[:mid]:
+                    st.write(f"• {skill}")
+            with cols[1]:
+                for skill in job_skills.required_skills[mid:]:
+                    st.write(f"• {skill}")
+        else:
+            for skill in job_skills.required_skills:
+                st.write(f"• {skill}")
+    
+    if job_skills.preferred_skills:
+        st.write("**Preferred Skills:**")
+        if len(job_skills.preferred_skills) > 10:
+            cols = st.columns(2)
+            mid = len(job_skills.preferred_skills) // 2
+            with cols[0]:
+                for skill in job_skills.preferred_skills[:mid]:
+                    st.write(f"• {skill}")
+            with cols[1]:
+                for skill in job_skills.preferred_skills[mid:]:
+                    st.write(f"• {skill}")
+        else:
+            for skill in job_skills.preferred_skills:
+                st.write(f"• {skill}")
+    
+    if job_skills.soft_skills:
+        st.write("**Soft Skills:**")
+        st.write(", ".join(job_skills.soft_skills))
     
     st.divider()
     
