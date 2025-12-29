@@ -1,34 +1,55 @@
 """Resume rewriter with reasoning chain generation."""
 
 import os
+import uuid
 from typing import Dict, List, Tuple, Optional
 from openai import OpenAI
-from src.models.resume import Resume, Bullet, Reasoning, Justification
+from src.models.resume import Resume, Bullet, Reasoning, Justification, BulletCandidate
 from src.models.job import JobMatch
 from src.models.skills import SkillOntology, UserSkills
+from src.compilation.bullet_scorer import BulletScorer
+from src.compilation.bullet_validator import BulletValidator
 
 
 class ResumeRewriter:
     """Generate resume bullet variations with reasoning chains."""
     
-    def __init__(self, api_key: Optional[str] = None, user_skills: Optional[UserSkills] = None):
+    def __init__(self, api_key: Optional[str] = None, user_skills: Optional[UserSkills] = None, ontology: Optional[SkillOntology] = None):
         """Initialize rewriter with OpenAI client and optional user skills."""
         api_key = api_key or os.getenv("OPENAI_API_KEY")
         if not api_key:
             raise ValueError("OpenAI API key required. Set OPENAI_API_KEY environment variable.")
         self.client = OpenAI(api_key=api_key)
         self.user_skills = user_skills
+        self.ontology = ontology or SkillOntology()
+        self.scorer = BulletScorer()
+        self.validator = BulletValidator(ontology=self.ontology, user_skills=user_skills)
     
     def generate_variations(
         self,
         resume: Resume,
         job_match: JobMatch,
-        ontology: SkillOntology,
-    ) -> Dict[str, Tuple[Reasoning, List[Bullet]]]:
-        """Generate variations for bullets needing adjustment.
+        ontology: Optional[SkillOntology] = None,
+        rewrite_intent: Optional[str] = None,
+    ) -> Dict[str, Tuple[Reasoning, List[BulletCandidate]]]:
+        """Generate ranked candidate variations for bullets needing adjustment.
         
-        Returns: Dict mapping bullet_id -> (Reasoning, List[4 Bullet variations])
+        Args:
+            resume: Resume to generate variations for
+            job_match: Job match information
+            ontology: Skill ontology (uses instance ontology if not provided)
+            rewrite_intent: Optional rewrite intent ("emphasize_skills", "more_technical", "more_concise", "conservative")
+        
+        Returns: Dict mapping bullet_id -> (Reasoning, List[ranked BulletCandidate objects])
         """
+        if ontology:
+            self.ontology = ontology
+            self.validator = BulletValidator(ontology=ontology, user_skills=self.user_skills)
+        
+        # Track resume generation started event (if db available)
+        # Note: This requires db to be passed or accessed differently
+        # For now, we'll track this in the calling code
+        
         proposals = {}
         
         # Identify bullets that need adjustment based on gap analysis
@@ -47,16 +68,34 @@ class ResumeRewriter:
         
         for bullet_id, bullet in bullets_to_adjust.items():
             # Step 1: Generate reasoning chain
-            reasoning = self._generate_reasoning(bullet, job_match, ontology)
+            reasoning = self._generate_reasoning(bullet, job_match, self.ontology)
             
-            # Step 2: Generate variations with reasoning (pass project context if applicable)
+            # Step 2: Generate candidates with reasoning (pass project context if applicable)
             project_context = project_context_map.get(bullet_id)
             project_name = project_name_map.get(bullet_id)
-            variations = self._generate_variations_with_reasoning(
-                bullet, reasoning, job_match, ontology, project_context=project_context, project_name=project_name
+            candidates = self._generate_candidates_with_reasoning(
+                bullet, reasoning, job_match, self.ontology, 
+                project_context=project_context, 
+                project_name=project_name,
+                rewrite_intent=rewrite_intent
             )
             
-            proposals[bullet_id] = (reasoning, variations)
+            # Step 3: Validate and filter candidates
+            valid_candidates = []
+            for candidate in candidates:
+                is_valid, errors = self.validator.validate(candidate, bullet.text)
+                if is_valid:
+                    valid_candidates.append(candidate)
+                # Log errors for debugging if needed
+            
+            # Step 4: Rank candidates
+            ranked_candidates = self.scorer.rank_candidates(valid_candidates, bullet.text, job_match)
+            
+            # Step 5: Calculate risk levels
+            for candidate in ranked_candidates:
+                candidate.risk_level = self.scorer.calculate_risk_level(candidate, bullet.text)
+            
+            proposals[bullet_id] = (reasoning, ranked_candidates)
         
         return proposals
     
@@ -253,7 +292,7 @@ Return as JSON:
     "confidence_score": 0.85
 }}"""
     
-    def _generate_variations_with_reasoning(
+    def _generate_candidates_with_reasoning(
         self,
         bullet: Bullet,
         reasoning: Reasoning,
@@ -261,25 +300,30 @@ Return as JSON:
         ontology: SkillOntology,
         project_context: Optional[List[str]] = None,
         project_name: Optional[str] = None,
-    ) -> List[Bullet]:
-        """Generate 4 variations based on reasoning.
+        rewrite_intent: Optional[str] = None,
+    ) -> List[BulletCandidate]:
+        """Generate bullet candidates with metadata based on reasoning.
         
         Args:
-            bullet: The bullet to generate variations for
+            bullet: The bullet to generate candidates for
             reasoning: The reasoning chain for the change
             job_match: Job match information
             ontology: Skill ontology
             project_context: Optional project tech stack to restrict skill additions
             project_name: Optional project name for user skills filtering
+            rewrite_intent: Optional rewrite intent to guide generation
+        
+        Returns:
+            List of BulletCandidate objects with metadata
         """
-        prompt = self._build_variation_prompt(bullet, reasoning, job_match, project_context=project_context, project_name=project_name)
+        prompt = self._build_candidate_prompt(bullet, reasoning, job_match, project_context=project_context, project_name=project_name, rewrite_intent=rewrite_intent)
         
         response = self.client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {
                     "role": "system",
-                    "content": "You are an expert resume writer. Generate 4 variations of a bullet point, each emphasizing different aspects. Maintain factual accuracy - do not fabricate experience."
+                    "content": "You are an expert resume writer. Generate bullet point candidates with detailed metadata including scores, diffs, and justifications. Maintain factual accuracy - do not fabricate experience."
                 },
                 {"role": "user", "content": prompt}
             ],
@@ -289,51 +333,66 @@ Return as JSON:
         
         import json
         result = json.loads(response.choices[0].message.content)
-        variations_data = result.get("variations", [])
+        candidates_data = result.get("candidates", [])
         
-        variations = []
-        for i, var_data in enumerate(variations_data[:4]):
-            var_text = var_data.get("text", "")
-            var_skills = var_data.get("skills", [])
-            var_justification = Justification(
-                trigger=var_data.get("trigger", reasoning.problem_identification),
-                skills_added=var_data.get("skills_added", []),
-                ats_keywords_added=var_data.get("ats_keywords_added", []),
-            )
+        candidates = []
+        for i, cand_data in enumerate(candidates_data[:4]):
+            var_text = cand_data.get("text", "")
             
             # Validate bullet length
             if len(var_text) > 150:
                 var_text = var_text[:147] + "..."
             
-            new_bullet = Bullet(
+            # Extract metadata
+            score = cand_data.get("score", {})
+            diff = cand_data.get("diff_from_original", {"added": [], "removed": []})
+            justification = cand_data.get("justification", {})
+            intent = cand_data.get("rewrite_intent", rewrite_intent)
+            
+            # Create candidate
+            candidate = BulletCandidate(
+                candidate_id=f"{bullet.text[:20]}_{uuid.uuid4().hex[:8]}",
                 text=var_text,
-                skills=var_skills,
+                score={
+                    "job_skill_coverage": score.get("job_skill_coverage", 0.0),
+                    "ats_keyword_gain": score.get("ats_keyword_gain", 0),
+                    "semantic_similarity": score.get("semantic_similarity", 0.0),
+                    "constraint_violations": score.get("constraint_violations", 0),
+                },
+                diff_from_original={
+                    "added": diff.get("added", []),
+                    "removed": diff.get("removed", []),
+                },
+                justification={
+                    "job_requirements_addressed": justification.get("job_requirements_addressed", []),
+                    "skills_mapped": justification.get("skills_mapped", []),
+                    "why_this_version": justification.get("why_this_version", ""),
+                },
+                risk_level="medium",  # Will be calculated later
+                rewrite_intent=intent,
+                composite_score=0.0,  # Will be calculated by scorer
             )
             
-            # Store justification in history
-            from src.models.resume import BulletHistory
-            new_bullet.history.append(BulletHistory(
-                original_text=bullet.text,
-                new_text=var_text,
-                justification=var_justification,
-                reasoning=reasoning,
+            candidates.append(candidate)
+        
+        # Ensure we have at least one candidate
+        if not candidates:
+            # Fallback: create a candidate from original
+            candidates.append(BulletCandidate(
+                candidate_id=f"{bullet.text[:20]}_{uuid.uuid4().hex[:8]}",
+                text=bullet.text,
+                score={"job_skill_coverage": 0.0, "ats_keyword_gain": 0, "semantic_similarity": 1.0, "constraint_violations": 0},
+                diff_from_original={"added": [], "removed": []},
+                justification={"job_requirements_addressed": [], "skills_mapped": [], "why_this_version": "Original bullet"},
+                risk_level="low",
+                rewrite_intent=None,
+                composite_score=0.0,
             ))
-            
-            variations.append(new_bullet)
         
-        # Ensure we have exactly 4 variations
-        while len(variations) < 4:
-            # Duplicate last variation if needed
-            if variations:
-                variations.append(variations[-1])
-            else:
-                # Fallback: return original bullet
-                variations.append(bullet)
-        
-        return variations[:4]
+        return candidates
     
-    def _build_variation_prompt(
-        self, bullet: Bullet, reasoning: Reasoning, job_match: JobMatch, project_context: Optional[List[str]] = None, project_name: Optional[str] = None
+    def _build_candidate_prompt(
+        self, bullet: Bullet, reasoning: Reasoning, job_match: JobMatch, project_context: Optional[List[str]] = None, project_name: Optional[str] = None, rewrite_intent: Optional[str] = None
     ) -> str:
         """Build prompt for variation generation."""
         context_note = ""
@@ -354,10 +413,21 @@ Return as JSON:
                 if all_user_skills:
                     user_skills_note = f"\n\nCRITICAL - Allowed Skills Only: You may ONLY use these verified skills: {', '.join(all_user_skills[:20])}. Do NOT add any skills that are not in this list. If a required job skill is not in this list, do NOT add it to the bullet."
         
-        return f"""Generate 4 variations of this resume bullet based on the reasoning chain.
+        # Build intent-specific guidance
+        intent_guidance = ""
+        if rewrite_intent == "emphasize_skills":
+            intent_guidance = "\n\nFocus: Emphasize required/preferred skills from the job description. Add skill keywords naturally."
+        elif rewrite_intent == "more_technical":
+            intent_guidance = "\n\nFocus: Make the bullet more technical and specific. Use precise technical terminology."
+        elif rewrite_intent == "more_concise":
+            intent_guidance = "\n\nFocus: Make the bullet more concise while preserving key information. Remove unnecessary words."
+        elif rewrite_intent == "conservative":
+            intent_guidance = "\n\nFocus: Conservative rewrite - minimal changes, only add skills that clearly fit the context. Avoid scope expansion."
+        
+        return f"""Generate 4 bullet candidates with detailed metadata based on the reasoning chain.
 
 Original Bullet: {bullet.text}
-Current Skills: {', '.join(bullet.skills)}{context_note}{user_skills_note}
+Current Skills: {', '.join(bullet.skills)}{context_note}{user_skills_note}{intent_guidance}
 
 Reasoning:
 - Problem: {reasoning.problem_identification}
@@ -369,30 +439,53 @@ Reasoning:
 Job Context:
 - Missing Skills: {', '.join(job_match.missing_skills[:5])}
 - Required Skills: {', '.join(job_match.skill_gaps.get('required_missing', [])[:5])}
+- Matching Skills: {', '.join(job_match.matching_skills[:5])}
 
-Generate 4 variations:
-1. Emphasize skills identified in reasoning
-2. Add ATS keywords from reasoning analysis
-3. Restructure based on solution approach
-4. Alternative phrasing from alternatives considered
+For each candidate, provide:
+1. text: The bullet text (≤150 characters)
+2. score: Object with:
+   - job_skill_coverage: 0.0-1.0 (how well it covers required/preferred skills)
+   - ats_keyword_gain: integer (number of new ATS keywords added)
+   - semantic_similarity: 0.0-1.0 (how similar to original meaning)
+   - constraint_violations: integer (number of constraint violations, 0 is best)
+3. diff_from_original: Object with:
+   - added: List of words/phrases added
+   - removed: List of words/phrases removed
+4. justification: Object with:
+   - job_requirements_addressed: List of job requirements this addresses
+   - skills_mapped: List of skills mentioned/added
+   - why_this_version: Brief explanation
+5. rewrite_intent: "{rewrite_intent or 'emphasize_skills'}"
 
-Each variation must:
+Each candidate must:
 - Be ≤150 characters
 - Maintain factual accuracy (no fabrication)
-- Include skills that are actually demonstrated and relevant to the project/context
+- Include skills that are actually demonstrated and relevant
 - Have one clear claim per bullet
 - For project bullets: Only use skills that match the project's tech stack
 - NEVER add skills that are not in the allowed skills list (if provided)
 
 Return as JSON:
 {{
-    "variations": [
+    "candidates": [
         {{
             "text": "...",
-            "skills": ["skill1", "skill2"],
-            "trigger": "...",
-            "skills_added": ["skill1"],
-            "ats_keywords_added": ["keyword1"]
+            "score": {{
+                "job_skill_coverage": 0.85,
+                "ats_keyword_gain": 3,
+                "semantic_similarity": 0.90,
+                "constraint_violations": 0
+            }},
+            "diff_from_original": {{
+                "added": ["Linux", "pipelines"],
+                "removed": []
+            }},
+            "justification": {{
+                "job_requirements_addressed": ["Linux experience", "Automation"],
+                "skills_mapped": ["Python", "Linux", "Automation"],
+                "why_this_version": "Maximizes required skill coverage without introducing new experience claims"
+            }},
+            "rewrite_intent": "{rewrite_intent or 'emphasize_skills'}"
         }},
         ...
     ]

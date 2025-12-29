@@ -46,12 +46,18 @@ def render_job_list(db: Database):
                 st.warning(f"Could not load resume from file: {e}")
                 resume = None
     
-    # Refresh button
-    col_refresh, col_spacer = st.columns([1, 10])
+    # Refresh and Add Job buttons in same row (below Jobs header)
+    col_refresh, col_add, col_spacer = st.columns([1, 1, 10])
     with col_refresh:
-        if st.button("🔄 Refresh", help="Re-run skill matching for all jobs", key="refresh_jobs"):
+        # Simple refresh button
+        if st.button("↻", help="Re-run skill matching for all jobs", key="refresh_jobs", width='stretch'):
             st.session_state['refreshing_jobs'] = True
             st.rerun()
+    with col_add:
+        # Add Job button - opens dialog
+        # Use "Add (+)" since Streamlit has a bug rendering plain ASCII "+" alone in buttons
+        if st.button("Add (+)", help="Add a new job posting", key="add_job_btn", width='stretch'):
+            st.session_state['show_add_job_dialog'] = True
     
     # Auto-match skills if refreshing or if jobs don't have cached matches
     if resume:
@@ -191,6 +197,21 @@ def render_job_list(db: Database):
     if 'date_applied' in display_df.columns:
         column_config["date_applied"] = st.column_config.DatetimeColumn("Date Applied")
     
+    # Add status-based row styling using pandas styling
+    status_color_map = {
+        "Rejected": "background-color: #ffebee",  # Light red
+        "Withdrawn": "background-color: #ffebee",  # Light red
+        "Offer": "background-color: #e8f5e9",  # Light green
+        "Applied": "background-color: #fff9c4",  # Light yellow
+        "Interview": "background-color: #fff9c4",  # Light yellow
+    }
+    
+    def get_row_style(row):
+        """Get styling for a row based on status."""
+        status_str = str(row.get('Status', 'New')) if 'Status' in row else 'New'
+        style = status_color_map.get(status_str, "")
+        return [style] * len(row)
+    
     # Display table - ensure it always shows
     try:
         if display_df.empty or len(display_df) == 0:
@@ -200,21 +221,40 @@ def render_job_list(db: Database):
         # Show row count
         st.caption(f"Showing {len(display_df)} job(s)")
         
-        selected_rows = st.dataframe(
-            display_df,
-            column_config=column_config,
-            on_select="rerun",
-            selection_mode="single-row",
-            width='stretch',
-            key="job_list_table",
-        )
+        # Calculate height based on row count (min 400, max 800)
+        row_count = len(display_df)
+        table_height = min(max(400, row_count * 35), 800)
+        
+        # Apply row styling
+        try:
+            styled_df = display_df.style.apply(get_row_style, axis=1)
+            selected_rows = st.dataframe(
+                styled_df,
+                column_config=column_config,
+                on_select="rerun",
+                selection_mode="single-row",
+                width='stretch',  # Full width
+                height=table_height,
+                key="job_list_table",
+            )
+        except Exception:
+            # Fallback if styling doesn't work
+            selected_rows = st.dataframe(
+                display_df,
+                column_config=column_config,
+                on_select="rerun",
+                selection_mode="single-row",
+                width='stretch',  # Full width
+                height=table_height,
+                key="job_list_table",
+            )
     except Exception as e:
         st.error(f"Error displaying jobs table: {e}")
         import traceback
         st.exception(e)
         # Fallback: show simple table without advanced config
         try:
-            st.dataframe(display_df, use_container_width=True)
+            st.dataframe(display_df, width='stretch')
         except:
             st.write("Unable to display jobs table. Please check the console for errors.")
         # Create a dummy selected_rows object

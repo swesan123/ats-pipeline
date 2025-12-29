@@ -1,7 +1,7 @@
 """Resume data models with Pydantic validation."""
 
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -24,6 +24,35 @@ class Reasoning(BaseModel):
     confidence_score: float = Field(..., ge=0.0, le=1.0, description="Confidence in this change (0-1)")
 
 
+class BulletCandidate(BaseModel):
+    """A candidate bullet variation with metadata for ranking and approval."""
+    
+    candidate_id: str = Field(..., description="Unique identifier for this candidate")
+    text: str = Field(..., description="Bullet text")
+    score: Dict[str, float] = Field(..., description="Score components: job_skill_coverage, ats_keyword_gain, semantic_similarity, constraint_violations")
+    diff_from_original: Dict[str, List[str]] = Field(..., description="What was added and removed from original")
+    justification: Dict[str, Any] = Field(..., description="Justification: job_requirements_addressed, skills_mapped, why_this_version")
+    risk_level: str = Field(..., description="Risk level: low, medium, or high")
+    rewrite_intent: Optional[str] = Field(None, description="Rewrite intent: emphasize_skills, more_technical, more_concise, conservative")
+    composite_score: float = Field(..., description="Composite score for ranking (0.0-1.0)")
+    
+    @field_validator("risk_level")
+    @classmethod
+    def validate_risk_level(cls, v: str) -> str:
+        """Validate risk level."""
+        if v not in ["low", "medium", "high"]:
+            raise ValueError(f"Risk level must be 'low', 'medium', or 'high', got {v}")
+        return v
+    
+    @field_validator("text")
+    @classmethod
+    def validate_text_length(cls, v: str) -> str:
+        """Validate bullet text length."""
+        if len(v) > 150:
+            raise ValueError(f"Bullet text must be 150 characters or less, got {len(v)}")
+        return v
+
+
 class BulletHistory(BaseModel):
     """History of changes to a bullet point."""
     
@@ -34,6 +63,8 @@ class BulletHistory(BaseModel):
     approved_by_human: bool = Field(False, description="Whether this change was approved by human")
     timestamp: datetime = Field(default_factory=datetime.now, description="When the change was made")
     selected_variation_index: Optional[int] = Field(None, ge=0, le=3, description="Which variation was selected (0-3)")
+    candidate_id: Optional[str] = Field(None, description="ID of the selected BulletCandidate")
+    decision_metadata: Optional[Dict[str, Any]] = Field(None, description="Metadata about the decision (score, risk_level, etc.)")
 
 
 class Bullet(BaseModel):

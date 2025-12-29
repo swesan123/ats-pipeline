@@ -32,6 +32,7 @@ dev = [
 
 [project.scripts]
 ats = "src.cli.main:cli"
+validate = "scripts.validate:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

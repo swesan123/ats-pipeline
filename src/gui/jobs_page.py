@@ -20,19 +20,8 @@ def render_jobs_page(db: Database):
     # This prevents column context leakage from other pages
     page_wrapper = st.container()
     with page_wrapper:
-        # Two-column layout - ensure proper scoping
-        left_col, right_col = st.columns([1, 2])
-        
-        # Left column: Add Job and Google Sheets Sync
-        with left_col:
-            st.header("Add Job")
-            render_job_input(db)
-        
-        st.divider()
-        
-        # Google Sheets Sync
-        st.header("Google Sheets Sync")
-        with st.expander("Sync from Google Sheets", expanded=False):
+        # Google Sheets Sync (collapsible)
+        with st.expander("Google Sheets Sync", expanded=False):
             st.write("**Sync (Dry Run)**: Preview what would be synced without making any changes to the database.")
             st.write("**Sync (Apply)**: Actually sync the data from Google Sheets to the database.")
             st.write("")
@@ -141,14 +130,233 @@ def render_jobs_page(db: Database):
                             st.exception(e)
                     else:
                         st.warning("Please provide credentials path and spreadsheet link")
+            
+            # Push to Google Sheets button
+            if st.button("Push to Google Sheets", help="Push all jobs from database to Google Sheets", key="gs_push"):
+                if credentials_path and spreadsheet_id:
+                    try:
+                        from src.sync.google_sheets_client import GoogleSheetsClient
+                        from src.sync.sheet_sync import SheetSyncService
+                        
+                        with st.spinner("Pushing jobs to Google Sheets..."):
+                            client = GoogleSheetsClient(credentials_path, spreadsheet_id)
+                            sync_service = SheetSyncService(db, client)
+                            stats = sync_service.push_to_sheet()
+                            
+                            st.success(f"Push complete!")
+                            st.write(f"- Created/Updated: {stats.get('created', 0) + stats.get('updated', 0)} rows")
+                            st.write(f"- Errors: {stats.get('errors', 0)}")
+                            
+                            if stats.get('error_details'):
+                                with st.expander("Error Details", expanded=True):
+                                    for error in stats['error_details'][:20]:
+                                        st.error(error)
+                                    if len(stats['error_details']) > 20:
+                                        st.write(f"... and {len(stats['error_details']) - 20} more errors")
+                    except ImportError as e:
+                        st.error(f"Missing dependencies: {e}\n\nInstall with: pip install gspread google-auth")
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+                        import traceback
+                        st.exception(e)
+                else:
+                    st.warning("Please provide credentials path and spreadsheet link")
         
-        # Right column: Jobs table
-        with right_col:
-            st.header("Jobs")
+        # Full-width Jobs table
+        st.header("Jobs")
+        
+        # Add Job Dialog - using modal or conditional rendering (placed here to be near buttons)
+        if st.session_state.get('show_add_job_dialog', False):
+            # Try st.modal() first (Streamlit 1.28+), fallback to conditional rendering
             try:
-                selected_job = render_job_list(db)
-            except Exception as e:
-                st.error(f"Error rendering job list: {e}")
-                import traceback
-                st.exception(e)
-                selected_job = None
+                # Check if st.modal exists
+                if hasattr(st, 'modal'):
+                    with st.modal("Add Job"):
+                        st.write("**Add a new job posting**")
+                        
+                        # Job input options
+                        input_method = st.radio(
+                            "Input method:",
+                            ["Job URL", "Job Description", "Upload File"],
+                            horizontal=True,
+                            key="job_input_method"
+                        )
+                        
+                        job_url = None
+                        job_description = None
+                        uploaded_file = None
+                        
+                        if input_method == "Job URL":
+                            job_url = st.text_input("Job URL", key="dialog_job_url")
+                        elif input_method == "Job Description":
+                            # Allow manual entry of company and title for better accuracy
+                            col_title, col_company = st.columns(2)
+                            with col_title:
+                                manual_title = st.text_input("Job Title (optional - will auto-detect if blank)", key="dialog_manual_title", placeholder="e.g., Software Engineer")
+                            with col_company:
+                                manual_company = st.text_input("Company (optional - will auto-detect if blank)", key="dialog_manual_company", placeholder="e.g., Lemurian Labs")
+                            job_description = st.text_area("Job Description", height=200, key="dialog_job_desc")
+                        else:  # Upload File
+                            # Allow manual entry of company and title for uploaded files too
+                            col_title, col_company = st.columns(2)
+                            with col_title:
+                                manual_title = st.text_input("Job Title (optional - will auto-detect if blank)", key="dialog_manual_title_file", placeholder="e.g., Software Engineer")
+                            with col_company:
+                                manual_company = st.text_input("Company (optional - will auto-detect if blank)", key="dialog_manual_company_file", placeholder="e.g., Lemurian Labs")
+                            uploaded_file = st.file_uploader("Upload job description file", type=['txt', 'md'], key="dialog_job_file")
+                            if uploaded_file:
+                                job_description = uploaded_file.read().decode('utf-8')
+                        
+                        col_submit, col_cancel = st.columns(2)
+                        with col_submit:
+                            if st.button("Add Job", type="primary", key="dialog_add_job"):
+                                try:
+                                    from src.gui.job_input import _extract_job_info_from_text, _save_job_from_text
+                                    
+                                    if job_url:
+                                        # Extract from URL
+                                        from src.extractors.job_url_scraper import JobURLScraper
+                                        from src.models.job import JobPosting
+                                        scraper = JobURLScraper()
+                                        job_data = scraper.extract_job_content(job_url)
+                                        if job_data and job_data.get('description'):
+                                            # Create JobPosting from dict
+                                            job_posting = JobPosting(
+                                                company=job_data.get('company', 'Unknown'),
+                                                title=job_data.get('title', 'Unknown'),
+                                                location=job_data.get('location'),
+                                                description=job_data.get('description', ''),
+                                                source_url=job_data.get('source_url', job_url),
+                                            )
+                                            # Save using the job posting object
+                                            from src.extractors.job_skills import JobSkillExtractor
+                                            extractor = JobSkillExtractor()
+                                            job_skills = extractor.extract_skills(job_posting)
+                                            db.save_job(job_posting, job_skills=job_skills)
+                                            st.success("Job added successfully!")
+                                            st.session_state['show_add_job_dialog'] = False
+                                            st.rerun()
+                                        else:
+                                            st.error("Could not extract job content from URL")
+                                    elif job_description:
+                                        # Use manual title/company if provided, otherwise auto-detect
+                                        manual_title_val = st.session_state.get('dialog_manual_title', '').strip()
+                                        manual_company_val = st.session_state.get('dialog_manual_company', '').strip()
+                                        _save_job_from_text(db, job_description, source_url=None, 
+                                                          manual_title=manual_title_val if manual_title_val else None,
+                                                          manual_company=manual_company_val if manual_company_val else None)
+                                        st.success("Job added successfully!")
+                                        st.session_state['show_add_job_dialog'] = False
+                                        st.rerun()
+                                    else:
+                                        st.warning("Please provide a job URL or description")
+                                except Exception as e:
+                                    st.error(f"Error adding job: {e}")
+                                    import traceback
+                                    st.exception(e)
+                        
+                        with col_cancel:
+                            if st.button("Cancel", key="dialog_cancel"):
+                                st.session_state['show_add_job_dialog'] = False
+                                st.rerun()
+                else:
+                    # Fallback: use expander for dialog-like behavior
+                    raise AttributeError("st.modal not available")
+            except (AttributeError, Exception):
+                # Fallback: use expander with conditional rendering
+                with st.expander("Add Job", expanded=True):
+                    st.write("**Add a new job posting**")
+                    
+                    # Job input options
+                    input_method = st.radio(
+                        "Input method:",
+                        ["Job URL", "Job Description", "Upload File"],
+                        horizontal=True,
+                        key="job_input_method"
+                    )
+                    
+                    job_url = None
+                    job_description = None
+                    uploaded_file = None
+                    
+                    if input_method == "Job URL":
+                        job_url = st.text_input("Job URL", key="dialog_job_url_fallback")
+                    elif input_method == "Job Description":
+                        # Allow manual entry of company and title for better accuracy
+                        col_title, col_company = st.columns(2)
+                        with col_title:
+                            manual_title = st.text_input("Job Title (optional - will auto-detect if blank)", key="dialog_manual_title_fallback", placeholder="e.g., Software Engineer")
+                        with col_company:
+                            manual_company = st.text_input("Company (optional - will auto-detect if blank)", key="dialog_manual_company_fallback", placeholder="e.g., Lemurian Labs")
+                        job_description = st.text_area("Job Description", height=200, key="dialog_job_desc_fallback")
+                    else:  # Upload File
+                        # Allow manual entry of company and title for uploaded files too
+                        col_title, col_company = st.columns(2)
+                        with col_title:
+                            manual_title = st.text_input("Job Title (optional - will auto-detect if blank)", key="dialog_manual_title_file_fallback", placeholder="e.g., Software Engineer")
+                        with col_company:
+                            manual_company = st.text_input("Company (optional - will auto-detect if blank)", key="dialog_manual_company_file_fallback", placeholder="e.g., Lemurian Labs")
+                        uploaded_file = st.file_uploader("Upload job description file", type=['txt', 'md'], key="dialog_job_file_fallback")
+                        if uploaded_file:
+                            job_description = uploaded_file.read().decode('utf-8')
+                    
+                    col_submit, col_cancel = st.columns(2)
+                    with col_submit:
+                        if st.button("Add Job", type="primary", key="dialog_add_job"):
+                            try:
+                                from src.gui.job_input import _extract_job_info_from_text, _save_job_from_text
+                                
+                                if job_url:
+                                    # Extract from URL
+                                    from src.extractors.job_url_scraper import JobURLScraper
+                                    from src.models.job import JobPosting
+                                    scraper = JobURLScraper()
+                                    job_data = scraper.extract_job_content(job_url)
+                                    if job_data and job_data.get('description'):
+                                        # Create JobPosting from dict
+                                        job_posting = JobPosting(
+                                            company=job_data.get('company', 'Unknown'),
+                                            title=job_data.get('title', 'Unknown'),
+                                            location=job_data.get('location'),
+                                            description=job_data.get('description', ''),
+                                            source_url=job_data.get('source_url', job_url),
+                                        )
+                                        # Save using the job posting object
+                                        from src.extractors.job_skills import JobSkillExtractor
+                                        extractor = JobSkillExtractor()
+                                        job_skills = extractor.extract_skills(job_posting)
+                                        db.save_job(job_posting, job_skills=job_skills)
+                                        st.success("Job added successfully!")
+                                        st.session_state['show_add_job_dialog'] = False
+                                        st.rerun()
+                                    else:
+                                        st.error("Could not extract job content from URL")
+                                elif job_description:
+                                    # Use manual title/company if provided, otherwise auto-detect
+                                    manual_title_val = st.session_state.get('dialog_manual_title_fallback', '').strip()
+                                    manual_company_val = st.session_state.get('dialog_manual_company_fallback', '').strip()
+                                    _save_job_from_text(db, job_description, source_url=None,
+                                                      manual_title=manual_title_val if manual_title_val else None,
+                                                      manual_company=manual_company_val if manual_company_val else None)
+                                    st.success("Job added successfully!")
+                                    st.session_state['show_add_job_dialog'] = False
+                                    st.rerun()
+                                else:
+                                    st.warning("Please provide a job URL or description")
+                            except Exception as e:
+                                st.error(f"Error adding job: {e}")
+                                import traceback
+                                st.exception(e)
+                    
+                    with col_cancel:
+                        if st.button("Cancel", key="dialog_cancel"):
+                            st.session_state['show_add_job_dialog'] = False
+                            st.rerun()
+        
+        try:
+            selected_job = render_job_list(db)
+        except Exception as e:
+            st.error(f"Error rendering job list: {e}")
+            import traceback
+            st.exception(e)
+            selected_job = None

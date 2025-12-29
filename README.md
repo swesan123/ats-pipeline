@@ -21,6 +21,7 @@ End-to-end job application pipeline with skill matching, explainable resume comp
 - **Google Sheets Sync**: One-way sync from Google Sheets to database for job tracking
 - **Resume Organization**: Organized resume storage with date-based folders and human-readable filenames
 - **Resume Preview**: PDF preview and download in GUI
+- **Analytics & Insights**: Comprehensive analytics dashboard with metrics, time-to-apply tracking, and missing skills analysis
 
 ## Prerequisites
 
@@ -814,6 +815,118 @@ The pipeline includes a project library system that allows you to store all your
 
 The `rewrite-resume` and `apply` commands automatically select relevant projects from your library when generating resumes.
 
+## Analytics & Insights
+
+The ATS Pipeline includes a comprehensive analytics system to track your job application process and identify skill gaps.
+
+### Accessing Analytics
+
+Open the Streamlit GUI and navigate to the **Analytics** page in the top navigation bar.
+
+### Key Metrics
+
+The analytics dashboard displays:
+- **Total Jobs Tracked**: Number of jobs in your database
+- **Applications Submitted**: Jobs with status "Applied"
+- **Average Time-to-Apply**: Average time from job creation to application submission
+- **Resumes Generated**: Count of customized resumes created
+- **Bullet Approval Rate**: Percentage of AI-generated bullets that were approved
+
+### Time-to-Apply Tracking
+
+Time-to-apply measures how long it takes you to apply for a job after adding it to the system.
+
+**How it works:**
+1. When you add a job (via GUI, CLI, or Google Sheets sync), tracking automatically starts
+2. When you change the job status to "Applied", the time-to-apply is calculated and stored
+3. The analytics dashboard shows:
+   - Average, median, min, and max time-to-apply
+   - Distribution histogram
+   - Trends over time
+
+**Use cases:**
+- Identify bottlenecks in your application process
+- Set goals for faster application turnaround
+- Track improvement over time
+
+### Missing Skills Analysis
+
+The system aggregates missing skills across all your job applications to help you prioritize skill development.
+
+**Two ranking methods:**
+
+1. **By Priority Score** (recommended):
+   - Calculates: `(required_count × 3.0) + (preferred_count × 1.5) + (general_count × 1.0)`
+   - Prioritizes skills that are frequently required (not just preferred)
+   - Shows which skills will have the biggest impact on your job fit scores
+
+2. **By Frequency**:
+   - Ranks skills by how often they appear across job postings
+   - Useful for identifying common skill requirements in your target roles
+
+**Using the analysis:**
+1. Navigate to the Analytics page
+2. Click "Refresh Skills Data" to update the aggregation (runs automatically after job matches)
+3. Review the "By Priority" tab to see which skills to learn first
+4. Use the "By Frequency" tab to see the most common missing skills
+
+**Skill categories tracked:**
+- Required missing skills (highest priority)
+- Preferred missing skills (medium priority)
+- General missing skills (lower priority)
+
+### Application Funnel
+
+The application funnel visualizes your job application pipeline:
+- **Stages**: New → Interested → Applied → Interview → Offer/Rejected
+- **Conversion Rates**: Percentage of jobs moving between stages
+- **Status Distribution**: Count of jobs at each stage
+
+Use this to:
+- Identify where you're losing opportunities
+- Track your application success rate
+- Set goals for each stage
+
+### Recent Activity
+
+View recent system events including:
+- Job additions
+- Status changes
+- Resume generations
+- Bullet approvals/rejections
+
+## Testing
+
+The project includes comprehensive unit and integration tests.
+
+### Running Tests
+
+```bash
+# Run all tests
+pytest
+
+# Run with coverage
+pytest --cov=src --cov-report=html
+
+# Run specific test file
+pytest tests/unit/test_analytics/test_event_tracker.py
+
+# Run integration tests
+pytest tests/integration/
+```
+
+### Test Coverage Goals
+
+- **Unit Tests**: >80% coverage for analytics modules
+- **Integration Tests**: Cover all major workflows
+- **Critical Paths**: 100% coverage for time-to-apply and missing skills aggregation
+
+### Test Structure
+
+- `tests/unit/` - Unit tests for individual components
+- `tests/integration/` - End-to-end workflow tests
+- `tests/unit/test_analytics/` - Analytics-specific unit tests
+
 ## Security
 
 **IMPORTANT: Never commit credentials or API keys to the repository!**
@@ -867,9 +980,42 @@ grep -r "sk-[a-zA-Z0-9]" . --exclude-dir=venv --exclude-dir=.git
 
 1. Create a feature branch: `git checkout -b feature/your-feature-name`
 2. Make your changes
-3. Write/update tests
-4. Ensure tests pass: `pytest`
-5. Submit a pull request
+3. Run validation: `make validate` or `python3 scripts/validate.py`
+4. Write/update tests
+5. Ensure tests pass: `make test` or `pytest`
+6. Run full check: `make check` (runs validation + tests)
+7. Submit a pull request
+
+### Validation and Testing
+
+Before committing, it's recommended to run validation to catch import errors and syntax issues:
+
+```bash
+# Quick validation (syntax only, faster)
+make validate-fast
+
+# Full validation (includes import checking)
+make validate
+
+# Run all tests
+make test
+
+# Run tests with coverage
+make test-cov
+
+# Run validation + tests together
+make check
+```
+
+You can also validate specific files:
+```bash
+python3 scripts/validate.py --files src/gui/analytics_page.py src/gui/jobs_page.py
+```
+
+The validation script checks for:
+- Syntax errors
+- Import errors (missing imports, undefined names)
+- Basic type issues
 
 ## License
 
