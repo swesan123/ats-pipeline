@@ -7,7 +7,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from typing import Dict, List
+from typing import Dict, List, Optional
 import streamlit as st
 from pathlib import Path
 from src.db.database import Database
@@ -16,84 +16,17 @@ from src.models.skills import SkillOntology
 from src.models.resume import Resume
 
 
-def _categorize_skills(skills: List[str]) -> Dict[str, List[str]]:
+def _categorize_skills(skills: List[str], job_skills: Optional[List[str]] = None) -> Dict[str, List[str]]:
     """Categorize skills into groups for better organization.
+    
+    Args:
+        skills: List of skill names to categorize
+        job_skills: Optional list of job-relevant skills to prioritize
     
     Returns: Dict mapping category name to list of skills
     """
-    # Define skill categories with keywords (order matters - more specific first)
-    # Check more specific categories first to avoid false matches
-    skill_categories = {
-        # Infrastructure categories (check first - most specific)
-        "Kubernetes & Orchestration": ["kubernetes", "k8s", "rke", "kopf", "kube-ovn", "kubevirt", "operator", "cncf", "helm"],
-        "Virtualization & Bare Metal": ["vmware", "esxi", "vcenter", "kvm", "xen", "ironic", "metal3", "virtualization", "bare-metal", "provisioning"],
-        "Storage": ["ceph", "weka", "qumulo", "nfs", "s3", "powerstore", "rook", "storage", "object storage", "block storage", "file storage"],
-        "Networking": ["bgp", "evpn", "sonic", "infiniband", "rdma", "roce", "leaf/spine", "topology", "network fabric", "throughput", "tcp/ip"],
-        "Cloud & Infrastructure": ["aws", "azure", "gcp", "cloudformation", "cloud", "infrastructure", "iaas", "paas", "saas"],
-        "DevOps & CI/CD": ["terraform", "ansible", "jenkins", "gitlab", "github actions", "circleci", "travis", "bamboo", "devops", "ci/cd", "pipeline", "deployment", "automation", "iac"],
-        "Operating Systems": ["ubuntu", "debian", "centos", "rhel", "windows", "linux", "os management", "kernel", "system"],
-        "Hardware & Platforms": ["supermicro", "dell", "hardware", "platform", "architecture", "compute", "data center", "datacenter"],
-        # AI/ML (check before languages to catch HPC terms)
-        "AI/ML & HPC": ["tensorflow", "pytorch", "keras", "scikit-learn", "numpy", "pandas", "nccl", "nvidia", "gpu", "a100", "h200", "gh200", "blackwell", "hopper", "ampere", "hpc", "high-performance", "distributed training", "machine learning", "deep learning", "neural", "cnn", "rnn"],
-        # APIs (check before languages to catch FastAPI, etc.)
-        "APIs & Microservices": ["fastapi", "rest", "graphql", "api", "microservices", "backend api", "asyncio", "pydantic"],
-        # Databases (check before languages)
-        "Databases": ["postgresql", "mysql", "mongodb", "redis", "cassandra", "dynamodb", "elasticsearch", "sql", "nosql", "database", "db", "relational"],
-        # Languages (check later - less specific)
-        "Languages": ["python", "java", "c++", "c#", "javascript", "typescript", "go", "golang", "rust", "ruby", "php", "r", "matlab", "swift", "kotlin", "scala", "clojure", "c", "cpp"],
-        # Frameworks (check after languages)
-        "Frameworks & Libraries": ["react", "vue", "angular", "django", "flask", "express", "spring", "rails", "laravel", "framework", "library"],
-        "Security": ["security", "firewall", "vpn", "ssl", "tls", "encryption", "authentication", "authorization", "jwt", "oauth", "saml", "gateway", "policy"],
-        "Monitoring & Observability": ["prometheus", "grafana", "datadog", "new relic", "splunk", "elk", "monitoring", "logging", "observability", "metrics", "troubleshooting", "root-cause"],
-        "Other": []  # Uncategorized skills
-    }
-    
-    categorized = {category: [] for category in skill_categories.keys()}
-    
-    for skill in skills:
-        skill_lower = skill.lower()
-        categorized_flag = False
-        
-        # Try to match skill to a category (check more specific categories first)
-        for category, patterns in skill_categories.items():
-            if category == "Other":
-                continue
-            
-            # Handle both dict format (new) and list format (old)
-            if isinstance(patterns, dict):
-                keywords = patterns.get("keywords", [])
-                exclude = patterns.get("exclude", [])
-            else:
-                # Old format - list of keywords
-                keywords = patterns
-                exclude = []
-            
-            # Skip if skill contains excluded terms (unless it's a very specific match)
-            if exclude and any(exc in skill_lower for exc in exclude):
-                # Only skip if it's a generic match, not a specific one
-                has_specific_match = any(kw == skill_lower or kw in skill_lower.split() for kw in keywords)
-                if not has_specific_match:
-                    continue
-            
-            for keyword in keywords:
-                keyword_lower = keyword.lower()
-                # Check for exact word match or if keyword is contained in skill
-                if (keyword_lower == skill_lower or
-                    keyword_lower in skill_lower or
-                    any(word == keyword_lower for word in skill_lower.split()) or
-                    any(keyword_lower in word for word in skill_lower.split())):
-                    categorized[category].append(skill)
-                    categorized_flag = True
-                    break
-            if categorized_flag:
-                break
-        
-        # If not categorized, add to "Other"
-        if not categorized_flag:
-            categorized["Other"].append(skill)
-    
-    # Remove empty categories
-    return {cat: skills_list for cat, skills_list in categorized.items() if skills_list}
+    from src.utils.skill_categorizer import categorize_skills as _categorize_skills
+    return _categorize_skills(skills, job_skills)
 
 
 def _display_skills_by_category(skills: List[str]):
@@ -148,7 +81,77 @@ def render_job_details(db: Database, job: dict):
         if job.get('location'):
             st.write(f"**Location:** {job['location']}")
         
-        # Display job description
+        # Primary action buttons - moved to top for better visibility
+        st.divider()
+        action_col1, action_col2, action_col3 = st.columns(3)
+        
+        with action_col1:
+            if st.button("Generate Resume", type="primary", key=f"generate_resume_{job['id']}"):
+                st.session_state['generate_resume_job_id'] = job['id']
+                st.rerun()
+        
+        with action_col2:
+            if st.button("View Match Details", key=f"view_match_{job['id']}"):
+                st.session_state['view_match_job_id'] = job['id']
+                st.rerun()
+        
+        with action_col3:
+            if st.button("Generate Cover Letter", key=f"generate_cover_{job['id']}"):
+                st.info("Cover letter generation coming soon (P1)")
+        
+        st.divider()
+        
+        # Check if workflow or match details is active - render those FIRST before job description
+        workflow_active = ('resume_generation_state' in st.session_state and 
+                          st.session_state.get('resume_generation_job_id') == job['id'])
+        match_details_active = ('view_match_job_id' in st.session_state and 
+                               st.session_state['view_match_job_id'] == job['id'])
+        generate_resume_active = ('generate_resume_job_id' in st.session_state and 
+                                 st.session_state['generate_resume_job_id'] == job['id'] and
+                                 'resume_generation_state' not in st.session_state)
+        
+        # If any workflow is active, render it here (before job description)
+        if workflow_active:
+            # Get job and resume for workflow
+            job_obj_workflow = db.get_job(job['id'])
+            if job_obj_workflow:
+                job_skills_workflow = db.get_job_skills(job['id'])
+                if job_skills_workflow:
+                    # Get resume
+                    resume = db.get_latest_resume()
+                    if not resume:
+                        resume_path = Path("data/resume.json")
+                        if resume_path.exists():
+                            try:
+                                import json
+                                with open(resume_path, 'r', encoding='utf-8') as f:
+                                    resume_data = json.load(f)
+                                resume = Resume.model_validate(resume_data)
+                            except Exception as e:
+                                st.error(f"Failed to load resume from file: {e}")
+                                return
+                        else:
+                            st.error("No resume found. Please convert LaTeX resume to JSON first.")
+                            return
+                    
+                    # Get matcher and resume manager
+                    ontology = SkillOntology()
+                    matcher = SkillMatcher(ontology)
+                    from src.storage.resume_manager import ResumeManager
+                    resume_manager = ResumeManager()
+                    
+                    _handle_resume_generation_workflow(db, job['id'], resume, job_skills_workflow, matcher, resume_manager, job_obj_workflow)
+                    return  # Exit early - don't show job description when workflow is active
+        
+        if generate_resume_active:
+            _handle_generate_resume(db, job['id'])
+            return  # Exit early - don't show job description when generating resume
+        
+        if match_details_active:
+            _handle_view_match_details(db, job['id'])
+            return  # Exit early - don't show job description when viewing match details
+        
+        # Display job description (only if no workflow is active)
         if job_obj and job_obj.description:
             st.subheader("Job Description")
             with st.expander("View Full Description", expanded=False):
@@ -218,79 +221,8 @@ def render_job_details(db: Database, job: dict):
             st.subheader("Soft Skills")
             st.write(", ".join(job_skills.soft_skills))
     
-    # Action buttons
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        if st.button("Generate Resume", type="primary"):
-            st.session_state['generate_resume_job_id'] = job['id']
-            st.rerun()
-    
-    with col2:
-        if st.button("View Match Details"):
-            st.session_state['view_match_job_id'] = job['id']
-            st.rerun()
-    
-    with col3:
-        if st.button("Generate Cover Letter"):
-            st.info("Cover letter generation coming soon (P1)")
-    
-    # Check if workflow is active FIRST (before handling generate_resume_job_id)
-    # This ensures the workflow continues even after generate_resume_job_id is deleted
-    if 'resume_generation_state' in st.session_state and st.session_state.get('resume_generation_job_id') == job['id']:
-        # Get job and resume for workflow
-        job_obj = db.get_job(job['id'])
-        if not job_obj:
-            st.error("Job not found.")
-            return
-        
-        job_skills = db.get_job_skills(job['id'])
-        if not job_skills:
-            st.error("Job skills not found. Please extract skills first.")
-            return
-        
-        # Get resume
-        resume = db.get_latest_resume()
-        if not resume:
-            resume_path = Path("data/resume.json")
-            if resume_path.exists():
-                try:
-                    import json
-                    with open(resume_path, 'r', encoding='utf-8') as f:
-                        resume_data = json.load(f)
-                    resume = Resume.model_validate(resume_data)
-                except Exception as e:
-                    st.error(f"Failed to load resume from file: {e}")
-                    return
-            else:
-                st.error("No resume found. Please convert LaTeX resume to JSON first.")
-                return
-        
-        # Get matcher and resume manager
-        ontology = SkillOntology()
-        matcher = SkillMatcher(ontology)
-        from src.storage.resume_manager import ResumeManager
-        resume_manager = ResumeManager()
-        
-        _handle_resume_generation_workflow(db, job['id'], resume, job_skills, matcher, resume_manager, job_obj)
-        return  # Exit early to prevent _handle_generate_resume from running
-    
-    # Handle generate resume action - only if workflow is not already active
-    # Keep the key until workflow actually starts (button is clicked)
-    if 'generate_resume_job_id' in st.session_state and 'resume_generation_state' not in st.session_state:
-        _handle_generate_resume(db, st.session_state['generate_resume_job_id'])
-        # Only delete the key if workflow didn't start (button wasn't clicked)
-        if 'resume_generation_state' not in st.session_state:
-            # Don't delete - keep it so button is rendered on next render
-            # The key will be deleted when workflow actually starts
-            pass
-        else:
-            del st.session_state['generate_resume_job_id']
-    
-    # Handle view match details action
-    if 'view_match_job_id' in st.session_state:
-        _handle_view_match_details(db, st.session_state['view_match_job_id'])
-        del st.session_state['view_match_job_id']
+    # Note: Workflow and match details handling is now done at the top of the function
+    # (right after buttons) to ensure they appear before job description
 
 
 def _handle_generate_resume(db: Database, job_id: int):
@@ -405,6 +337,17 @@ def _handle_generate_resume(db: Database, job_id: int):
         
         # Show match details
         with st.expander("View Match Details", expanded=False):
+            # Add refresh button
+            refresh_col1, refresh_col2 = st.columns([1, 10])
+            with refresh_col1:
+                if st.button("↻", help="Refresh match details", key=f"refresh_match_{job_id}"):
+                    # Re-run matching
+                    job_match = matcher.match_job(resume, job_skills)
+                    resume_id = db.get_latest_resume_id()
+                    if resume_id:
+                        db.save_job_match(job_match, job_id, resume_id)
+                    st.rerun()
+            
             st.write(f"**Fit Score:** {job_match.fit_score:.2%}")
             
             if job_match.matching_skills:
@@ -464,13 +407,29 @@ def _handle_resume_generation_workflow(
         if job_match.skill_gaps.get("preferred_missing"):
             st.write(f"**Missing Preferred Skills:** {', '.join(job_match.skill_gaps['preferred_missing'][:10])}")
         
-        # Initialize rewriter
-        rewriter = ResumeRewriter()
+        # Initialize rewriter with user skills to prevent fabricated technologies
+        from src.models.skills import UserSkills
+        from pathlib import Path as _Path
+        import json as _json
         
-        # Generate proposals
+        user_skills_obj = None
+        skills_path = _Path("data/user_skills.json")
+        if skills_path.exists():
+            try:
+                with skills_path.open("r", encoding="utf-8") as f:
+                    user_skills_data = _json.load(f)
+                user_skills_obj = UserSkills.model_validate(user_skills_data)
+            except Exception:
+                # If loading fails, fall back to None (no whitelist) but do not break flow
+                user_skills_obj = None
+        
+        rewriter = ResumeRewriter(user_skills=user_skills_obj)
+        
+        # Generate proposals (default to emphasize_skills mode)
         st.progress(0.5, text="Step 2 of 4: Generating bullet variations with reasoning...")
         with st.spinner("Generating bullet variations with reasoning..."):
-            proposals = rewriter.generate_variations(resume, job_match, SkillOntology())
+            default_intent = "emphasize_skills"
+            proposals = rewriter.generate_variations(resume, job_match, SkillOntology(), rewrite_intent=default_intent)
         
         if not proposals:
             st.info("No bullets need adjustment. Your resume is already well-matched!")
@@ -487,6 +446,15 @@ def _handle_resume_generation_workflow(
         st.session_state['resume_generation_state'] = 'approval'
         st.session_state['current_bullet_index'] = 0
         st.session_state['approved_bullets'] = {}
+        st.session_state['resume_rewriter'] = rewriter
+        st.session_state['job_match_for_approval'] = job_match
+        
+        # Store original resume for ATS keyword tracking and content optimization
+        import json
+        st.session_state['original_resume_for_ats'] = resume.model_dump_json()
+        st.session_state['ats_job_skills'] = job_skills
+        st.session_state['job_match_for_optimization'] = job_match.model_dump_json()
+        
         st.rerun()
     
     elif state == 'approval':
@@ -537,13 +505,56 @@ def _handle_resume_generation_workflow(
             st.rerun()
             return
         
+        # Build project context map for regeneration
+        project_context_map = {}
+        project_name_map = {}
+        bullet_id = 0
+        for proj in resume.projects:
+            for bullet in proj.bullets:
+                proj_key = f"proj_{proj.name}_{bullet_id}"
+                project_context_map[proj_key] = proj.tech_stack
+                project_name_map[proj_key] = proj.name
+                bullet_id += 1
+        
+        # Get current rewrite intent from session state or default
+        current_rewrite_intent = st.session_state.get(f'rewrite_intent_{bullet_key}', None)
+        
+        # Get rewriter instance (store in session state if not available)
+        if 'resume_rewriter' not in st.session_state:
+            from src.models.skills import UserSkills
+            from pathlib import Path as _Path
+            import json as _json
+            user_skills_obj = None
+            skills_path = _Path("data/user_skills.json")
+            if skills_path.exists():
+                try:
+                    with skills_path.open("r", encoding="utf-8") as f:
+                        user_skills_data = _json.load(f)
+                    user_skills_obj = UserSkills.model_validate(user_skills_data)
+                except Exception:
+                    user_skills_obj = None
+            st.session_state['resume_rewriter'] = ResumeRewriter(user_skills=user_skills_obj)
+            st.session_state['user_skills_obj'] = user_skills_obj
+        
+        rewriter = st.session_state['resume_rewriter']
+        job_match = st.session_state.get('job_match_for_approval')
+        if not job_match:
+            # Recreate job match if needed
+            ontology = SkillOntology()
+            matcher = SkillMatcher(ontology)
+            job_skills = st.session_state.get('ats_job_skills')
+            if job_skills:
+                job_match = matcher.match_job(resume, job_skills)
+                st.session_state['job_match_for_approval'] = job_match
+        
         # Render approval workflow
         result = render_approval_workflow(
             original_bullet,
             reasoning,
             variations,
             bullet_index + 1,
-            len(bullet_keys)
+            len(bullet_keys),
+            rewrite_intent=current_rewrite_intent
         )
         
         if result[0] is True:  # Approved
@@ -554,6 +565,40 @@ def _handle_resume_generation_workflow(
             st.rerun()
         elif result[0] is False:  # Rejected
             st.session_state['current_bullet_index'] += 1
+            st.rerun()
+        elif result[2] is not None:  # Rewrite intent changed - regenerate
+            # Store new intent and regenerate
+            st.session_state[f'rewrite_intent_{bullet_key}'] = result[2]
+            # Regenerate with new intent
+            if job_match:
+                new_reasoning = rewriter._generate_reasoning(original_bullet, job_match, SkillOntology())
+                new_candidates = rewriter._generate_candidates_with_reasoning(
+                    original_bullet, new_reasoning, job_match, SkillOntology(),
+                    project_context=project_context_map.get(bullet_key),
+                    project_name=project_name_map.get(bullet_key),
+                    rewrite_intent=result[2]
+                )
+                # Validate candidates
+                allowed_job_skills = rewriter._get_allowed_job_skills_for_user(job_match)
+                valid_candidates = []
+                for candidate in new_candidates:
+                    is_valid, errors = rewriter.validator.validate(
+                        candidate, 
+                        original_bullet.text, 
+                        job_skills=allowed_job_skills if allowed_job_skills else None,
+                        rewrite_intent=result[2]
+                    )
+                    if is_valid:
+                        valid_candidates.append(candidate)
+                # Rank candidates
+                if valid_candidates:
+                    ranked_candidates = rewriter.scorer.rank_candidates(valid_candidates, original_bullet.text, job_match)
+                    for candidate in ranked_candidates:
+                        candidate.risk_level = rewriter.scorer.calculate_risk_level(candidate, original_bullet.text)
+                    new_candidates = ranked_candidates
+                # Update proposals
+                proposals[bullet_key] = (new_reasoning, new_candidates)
+                st.session_state['resume_proposals'] = proposals
             st.rerun()
         # If None, waiting for user input
     
@@ -566,6 +611,9 @@ def _handle_resume_generation_workflow(
         updated_resume = resume.model_copy(deep=True)
         approved_bullets = st.session_state.get('approved_bullets', {})
         
+        # Import Bullet model for conversion
+        from src.models.resume import Bullet, BulletCandidate
+        
         # Apply changes to experience bullets
         bullet_id = 0
         for exp in updated_resume.experience:
@@ -573,7 +621,18 @@ def _handle_resume_generation_workflow(
                 bullet_key = f"exp_{exp.organization}_{bullet_id}"
                 if bullet_key in approved_bullets:
                     approved = approved_bullets[bullet_key]
-                    exp.bullets[i] = approved
+                    # Convert BulletCandidate to Bullet if needed
+                    if isinstance(approved, BulletCandidate):
+                        # Create new Bullet with text from BulletCandidate, preserve skills from original
+                        exp.bullets[i] = Bullet(
+                            text=approved.text,
+                            skills=bullet.skills.copy() if bullet.skills else [],
+                            evidence=bullet.evidence,
+                            history=bullet.history.copy() if bullet.history else []
+                        )
+                    else:
+                        # Already a Bullet object
+                        exp.bullets[i] = approved
                 bullet_id += 1
         
         # Apply changes to project bullets
@@ -583,8 +642,83 @@ def _handle_resume_generation_workflow(
                 bullet_key = f"proj_{proj.name}_{bullet_id}"
                 if bullet_key in approved_bullets:
                     approved = approved_bullets[bullet_key]
-                    proj.bullets[i] = approved
+                    # Convert BulletCandidate to Bullet if needed
+                    if isinstance(approved, BulletCandidate):
+                        # Create new Bullet with text from BulletCandidate, preserve skills from original
+                        proj.bullets[i] = Bullet(
+                            text=approved.text,
+                            skills=bullet.skills.copy() if bullet.skills else [],
+                            evidence=bullet.evidence,
+                            history=bullet.history.copy() if bullet.history else []
+                        )
+                    else:
+                        # Already a Bullet object
+                        proj.bullets[i] = approved
                 bullet_id += 1
+        
+        # Update skills section - ONLY use skills from user_skills.json (skills page)
+        from src.utils.skill_categorizer import categorize_skills, validate_and_clean_skills_with_openai
+        from src.models.skills import UserSkills
+        import json
+        import time
+        from pathlib import Path
+        
+        # #region agent log
+        with open('/home/swesan/repos/ats-pipeline/.cursor/debug.log', 'a') as f:
+            f.write(json.dumps({"sessionId":"debug-session","runId":"run3","hypothesisId":"A","location":"job_details.py:564","message":"Original resume.skills","data":{"original_skills":resume.skills},"timestamp":int(time.time()*1000)}) + '\n')
+        # #endregion
+        
+        # Load skills ONLY from user_skills.json (skills page)
+        skills_file = Path("data/user_skills.json")
+        user_skills_list = []
+        if skills_file.exists():
+            try:
+                with open(skills_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    user_skills_obj = UserSkills.model_validate(data)
+                    user_skills_list = [skill.name for skill in user_skills_obj.skills]
+            except Exception as e:
+                st.warning(f"Could not load user skills: {e}")
+        
+        # #region agent log
+        with open('/home/swesan/repos/ats-pipeline/.cursor/debug.log', 'a') as f:
+            f.write(json.dumps({"sessionId":"debug-session","runId":"run3","hypothesisId":"A","location":"job_details.py:580","message":"Skills from user_skills.json","data":{"user_skills_list":user_skills_list},"timestamp":int(time.time()*1000)}) + '\n')
+        # #endregion
+        
+        # Get job skills for prioritization
+        job_skills_list = []
+        if job_skills:
+            job_skills_list = job_skills.required_skills + job_skills.preferred_skills
+        
+        # Validate and clean skills with OpenAI
+        validated_skills = validate_and_clean_skills_with_openai(user_skills_list, job_skills_list)
+        
+        # #region agent log
+        with open('/home/swesan/repos/ats-pipeline/.cursor/debug.log', 'a') as f:
+            f.write(json.dumps({"sessionId":"debug-session","runId":"run3","hypothesisId":"A","location":"job_details.py:590","message":"After OpenAI validation","data":{"validated_skills":validated_skills},"timestamp":int(time.time()*1000)}) + '\n')
+        # #endregion
+        
+        # Categorize and update skills section (without "Other" category)
+        categorized_skills = categorize_skills(validated_skills, job_skills_list)
+        
+        # #region agent log
+        with open('/home/swesan/repos/ats-pipeline/.cursor/debug.log', 'a') as f:
+            f.write(json.dumps({"sessionId":"debug-session","runId":"run3","hypothesisId":"C","location":"job_details.py:600","message":"Final categorized skills","data":{"categorized_skills":categorized_skills},"timestamp":int(time.time()*1000)}) + '\n')
+        # #endregion
+        
+        updated_resume.skills = categorized_skills
+        
+        # Optimize content order within sections by job relevance
+        if job_skills and 'job_match_for_optimization' in st.session_state:
+            try:
+                from src.compilation.content_optimizer import ResumeContentOptimizer
+                from src.models.job import JobMatch
+                job_match = JobMatch.model_validate_json(st.session_state['job_match_for_optimization'])
+                optimizer = ResumeContentOptimizer(job_match, job_skills)
+                updated_resume = optimizer.optimize_all(updated_resume)
+            except Exception as e:
+                # If optimization fails, continue without it
+                pass
         
         # Show diff view - get original resume from session state if stored
         original_for_diff = resume
@@ -604,8 +738,23 @@ def _handle_resume_generation_workflow(
             preview_path = Path("data/resume_preview_temp.pdf")
             preview_path.parent.mkdir(exist_ok=True, parents=True)
             
+            # Create ATS keyword tracker for highlighting
+            # Note: The renderer uses updated_resume's bullet text, and the tracker's job_relevant_keywords
+            # are based on job_skills (not the resume), so highlighting will work correctly on updated bullets
+            ats_tracker = None
+            if 'original_resume_for_ats' in st.session_state and 'ats_job_skills' in st.session_state:
+                try:
+                    original_resume = Resume.model_validate_json(st.session_state['original_resume_for_ats'])
+                    from src.utils.ats_keyword_tracker import ATSKeywordTracker
+                    # Tracker is initialized with original resume for change tracking, but job_relevant_keywords
+                    # come from job_skills, so highlighting works on updated resume bullets
+                    ats_tracker = ATSKeywordTracker(original_resume, st.session_state['ats_job_skills'])
+                except Exception as e:
+                    # If tracker creation fails, continue without it
+                    pass
+            
             with st.spinner("Generating PDF preview..."):
-                renderer.render_pdf(updated_resume, preview_path)
+                renderer.render_pdf(updated_resume, preview_path, ats_tracker)
             
             if preview_path.exists():
                 st.progress(1.0, text="PDF preview ready!")

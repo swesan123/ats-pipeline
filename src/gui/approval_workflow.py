@@ -10,6 +10,7 @@ sys.path.insert(0, str(project_root))
 
 import streamlit as st
 from src.models.resume import Bullet, Reasoning, BulletCandidate
+from src.compilation.bullet_feedback import BulletFeedbackStore
 
 
 def render_approval_workflow(
@@ -19,6 +20,7 @@ def render_approval_workflow(
     bullet_num: int,
     total_bullets: int,
     regenerate_callback: Optional[Callable[[str], None]] = None,
+    rewrite_intent: Optional[str] = None,
 ) -> tuple[bool, Optional[int], Optional[str]]:
     """Render approval workflow UI with ranked candidates.
     
@@ -29,6 +31,7 @@ def render_approval_workflow(
         bullet_num: Current bullet number
         total_bullets: Total number of bullets
         regenerate_callback: Optional callback for rewrite intents (takes intent: str)
+        rewrite_intent: Current rewrite intent mode
     
     Returns: (approved, selected_candidate_index, rewrite_intent)
     - approved: True if approved, False if rejected, None if pending
@@ -38,6 +41,29 @@ def render_approval_workflow(
     st.progress(bullet_num / total_bullets, text=f"Processing bullet {bullet_num} of {total_bullets}")
     
     st.subheader(f"Bullet {bullet_num} of {total_bullets}")
+    
+    # Display rewrite mode selector
+    if regenerate_callback:
+        st.write("**Rewrite Mode:**")
+        mode_options = ["emphasize_skills", "reword_only", "more_technical", "more_concise", "conservative"]
+        mode_labels = {
+            "emphasize_skills": "Emphasize Skills (add job keywords)",
+            "reword_only": "Reword Only (no new skills)",
+            "more_technical": "More Technical",
+            "more_concise": "More Concise",
+            "conservative": "Conservative"
+        }
+        current_mode = rewrite_intent or "emphasize_skills"
+        selected_mode = st.radio(
+            "Select rewrite mode:",
+            options=mode_options,
+            format_func=lambda x: mode_labels.get(x, x),
+            index=mode_options.index(current_mode) if current_mode in mode_options else 0,
+            key=f"rewrite_mode_{bullet_num}",
+        )
+        if selected_mode != current_mode:
+            # Mode changed - trigger regeneration
+            return None, None, selected_mode
     
     # Display original
     st.write("**Original Bullet:**")
@@ -142,17 +168,29 @@ def render_approval_workflow(
     
     # Action buttons
     col1, col2, col3, col4, col5 = st.columns(5)
+    feedback_store = BulletFeedbackStore()
     
     with col1:
         approve_btn = st.button("Accept", type="primary", key=f"approve_{bullet_num}")
         if approve_btn:
             st.session_state[f'approved_{bullet_num}'] = selected_option
+            # Record feedback for future generations
+            feedback_store.record_feedback(
+                action="accepted",
+                candidate=selected_candidate,
+                rewrite_intent=selected_candidate.rewrite_intent,
+            )
             return True, selected_option, None
     
     with col2:
         reject_btn = st.button("Reject", key=f"reject_{bullet_num}")
         if reject_btn:
             st.session_state[f'rejected_{bullet_num}'] = True
+            feedback_store.record_feedback(
+                action="rejected",
+                candidate=primary,
+                rewrite_intent=primary.rewrite_intent,
+            )
             return False, None, None
     
     # Rewrite intent buttons
