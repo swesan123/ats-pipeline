@@ -2,28 +2,38 @@
 
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Callable
 
 # Add project root to path for imports
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 import streamlit as st
-from src.models.resume import Bullet, Reasoning
+from src.models.resume import Bullet, Reasoning, BulletCandidate
 
 
 def render_approval_workflow(
     original: Bullet,
     reasoning: Reasoning,
-    variations: list[Bullet],
+    candidates: List[BulletCandidate],
     bullet_num: int,
     total_bullets: int,
-) -> tuple[bool, Optional[int]]:
-    """Render approval workflow UI.
+    regenerate_callback: Optional[Callable[[str], None]] = None,
+) -> tuple[bool, Optional[int], Optional[str]]:
+    """Render approval workflow UI with ranked candidates.
     
-    Returns: (approved, selected_variation_index)
-    - approved: True if approved, False if rejected
-    - selected_variation_index: 0-3 if approved, None if rejected
+    Args:
+        original: Original bullet
+        reasoning: Reasoning chain
+        candidates: Ranked list of BulletCandidate objects
+        bullet_num: Current bullet number
+        total_bullets: Total number of bullets
+        regenerate_callback: Optional callback for rewrite intents (takes intent: str)
+    
+    Returns: (approved, selected_candidate_index, rewrite_intent)
+    - approved: True if approved, False if rejected, None if pending
+    - selected_candidate_index: Index of selected candidate if approved, None otherwise
+    - rewrite_intent: Intent string if regeneration requested, None otherwise
     """
     st.progress(bullet_num / total_bullets, text=f"Processing bullet {bullet_num} of {total_bullets}")
     
@@ -54,46 +64,120 @@ def render_approval_workflow(
         
         st.progress(reasoning.confidence_score, text=f"Confidence: {reasoning.confidence_score:.1%}")
     
-    # Display variations
-    st.write("**Variations:**")
-    selected_variation = st.radio(
-        "Select a variation:",
-        options=range(len(variations)),
-        format_func=lambda i: f"Variation {i+1}: {variations[i].text[:100]}...",
+    if not candidates:
+        st.warning("No valid candidates generated for this bullet.")
+        if st.button("Reject", key=f"reject_{bullet_num}"):
+            return False, None, None
+        return None, None, None
+    
+    # Display primary candidate (top ranked)
+    primary = candidates[0]
+    
+    # Risk level color coding
+    risk_colors = {
+        "low": "🟢",
+        "medium": "🟡",
+        "high": "🔴"
+    }
+    risk_emoji = risk_colors.get(primary.risk_level, "⚪")
+    
+    st.write("---")
+    st.write(f"**Recommended** {risk_emoji} (Score: {primary.composite_score:.2f}, Risk: {primary.risk_level.upper()})")
+    st.write(primary.text)
+    
+    # Show metadata for primary
+    with st.expander("Candidate Details", expanded=False):
+        col1, col2 = st.columns(2)
+        with col1:
+            st.write("**Score Components:**")
+            st.write(f"- Job Skill Coverage: {primary.score.get('job_skill_coverage', 0.0):.2f}")
+            st.write(f"- ATS Keyword Gain: {primary.score.get('ats_keyword_gain', 0)}")
+            st.write(f"- Semantic Similarity: {primary.score.get('semantic_similarity', 0.0):.2f}")
+            st.write(f"- Constraint Violations: {primary.score.get('constraint_violations', 0)}")
+        
+        with col2:
+            st.write("**Changes:**")
+            added = primary.diff_from_original.get("added", [])
+            removed = primary.diff_from_original.get("removed", [])
+            if added:
+                st.write(f"Added: {', '.join(added[:5])}")
+            if removed:
+                st.write(f"Removed: {', '.join(removed[:5])}")
+        
+        st.write("**Justification:**")
+        st.write(primary.justification.get("why_this_version", ""))
+        if primary.justification.get("job_requirements_addressed"):
+            st.write(f"Addresses: {', '.join(primary.justification['job_requirements_addressed'][:5])}")
+    
+    # Display alternatives (if any)
+    if len(candidates) > 1:
+        st.write("---")
+        st.write("**Alternatives:**")
+        for i, candidate in enumerate(candidates[1:3], 1):  # Show up to 2 alternatives
+            risk_emoji_alt = risk_colors.get(candidate.risk_level, "⚪")
+            intent_label = ""
+            if candidate.rewrite_intent:
+                intent_map = {
+                    "emphasize_skills": "Emphasizes skills",
+                    "more_technical": "More technical",
+                    "more_concise": "More concise",
+                    "conservative": "Conservative"
+                }
+                intent_label = f" ({intent_map.get(candidate.rewrite_intent, candidate.rewrite_intent)})"
+            
+            with st.expander(f"Alternative {chr(64+i)} {risk_emoji_alt} (Score: {candidate.composite_score:.2f}, Risk: {candidate.risk_level.upper()}){intent_label}", expanded=False):
+                st.write(candidate.text)
+                st.caption(f"ATS keywords: {candidate.score.get('ats_keyword_gain', 0)} | Similarity: {candidate.score.get('semantic_similarity', 0.0):.2f}")
+    
+    # Candidate selection
+    candidate_options = ["Recommended"] + [f"Alternative {chr(64+i)}" for i in range(1, min(len(candidates), 3))]
+    selected_option = st.radio(
+        "Select candidate:",
+        options=range(len(candidate_options)),
+        format_func=lambda i: candidate_options[i],
+        key=f"candidate_select_{bullet_num}",
     )
     
-    # Show full text of selected variation
-    if selected_variation is not None:
-        st.write("**Selected Variation:**")
-        st.write(variations[selected_variation].text)
-        
-        if variations[selected_variation].history:
-            justification = variations[selected_variation].history[0].justification
-            st.write("**Justification:**")
-            st.write(f"Trigger: {justification.trigger}")
-            if justification.skills_added:
-                st.write(f"Skills added: {', '.join(justification.skills_added)}")
+    selected_candidate = candidates[selected_option]
     
     # Action buttons
-    col1, col2 = st.columns(2)
+    col1, col2, col3, col4, col5 = st.columns(5)
     
     with col1:
-        approve_btn = st.button("Approve", type="primary", key=f"approve_{bullet_num}")
+        approve_btn = st.button("Accept", type="primary", key=f"approve_{bullet_num}")
         if approve_btn:
-            st.session_state[f'approved_{bullet_num}'] = selected_variation
-            return True, selected_variation
+            st.session_state[f'approved_{bullet_num}'] = selected_option
+            return True, selected_option, None
     
     with col2:
         reject_btn = st.button("Reject", key=f"reject_{bullet_num}")
         if reject_btn:
             st.session_state[f'rejected_{bullet_num}'] = True
-            return False, None
+            return False, None, None
+    
+    # Rewrite intent buttons
+    if regenerate_callback:
+        with col3:
+            if st.button("Emphasize Skills", key=f"intent_r_{bullet_num}"):
+                return None, None, "emphasize_skills"
+        with col4:
+            if st.button("More Technical", key=f"intent_t_{bullet_num}"):
+                return None, None, "more_technical"
+        with col5:
+            if st.button("More Concise", key=f"intent_c_{bullet_num}"):
+                return None, None, "more_concise"
+        
+        # Conservative button on next row
+        col6, col7 = st.columns(2)
+        with col6:
+            if st.button("Conservative", key=f"intent_s_{bullet_num}"):
+                return None, None, "conservative"
     
     # Check if already approved/rejected in this session
     if f'approved_{bullet_num}' in st.session_state:
-        return True, st.session_state[f'approved_{bullet_num}']
+        return True, st.session_state[f'approved_{bullet_num}'], None
     if f'rejected_{bullet_num}' in st.session_state:
-        return False, None
+        return False, None, None
     
-    return None, None
+    return None, None, None
 

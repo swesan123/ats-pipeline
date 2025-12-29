@@ -383,4 +383,83 @@ class SheetSyncService:
             """, (job_id, status, applied_at, row.get('Notes')))
         
         self.db.conn.commit()
+    
+    def push_to_sheet(self, sheet_name: str = "Sheet1") -> Dict[str, int]:
+        """Push all jobs from database to Google Sheets.
+        
+        Args:
+            sheet_name: Name of the sheet to write to
+            
+        Returns:
+            Dictionary with counts: {'created': int, 'updated': int, 'errors': int, 'error_details': List[str]}
+        """
+        try:
+            # Get all jobs from database
+            jobs = self.db.list_jobs()
+            if not jobs:
+                return {'created': 0, 'updated': 0, 'errors': 0, 'error_details': []}
+            
+            # Map database columns to Google Sheets columns
+            column_mapping = {
+                'company': 'Company Name',
+                'title': 'Job Title',
+                'source_url': 'Job Link / Source',
+                'location': 'Location',
+                'created_at': 'Date Added',
+                'date_applied': 'Date Applied',
+                'status': 'Status',
+                'notes': 'Notes',
+                'description': 'Job Description',
+                'contact_name': 'Contact Name',
+                'contact_info': 'Contact Info',
+                'interview_dates': 'Interview Date(s)',
+                'offer_outcome': 'Offer / Outcome',
+            }
+            
+            # Convert jobs to sheet format
+            sheet_rows = []
+            for job in jobs:
+                row_data = {}
+                for db_col, sheet_col in column_mapping.items():
+                    value = job.get(db_col, '')
+                    # Convert datetime to string if needed
+                    if hasattr(value, 'strftime'):
+                        value = value.strftime('%Y-%m-%d %H:%M:%S')
+                    elif value is None:
+                        value = ''
+                    row_data[sheet_col] = str(value)
+                sheet_rows.append(row_data)
+            
+            # Write to sheet (update or append)
+            created_count = 0
+            updated_count = 0
+            error_count = 0
+            error_details = []
+            
+            for row_data in sheet_rows:
+                try:
+                    # Match by Company Name + Job Title
+                    match_columns = ['Company Name', 'Job Title']
+                    
+                    was_updated, row_num = self.client.update_or_append_row(
+                        row_data, 
+                        sheet_name, 
+                        match_columns
+                    )
+                    if was_updated:
+                        updated_count += 1
+                    else:
+                        created_count += 1
+                except Exception as e:
+                    error_count += 1
+                    error_details.append(f"Error pushing job {row_data.get('Company Name', 'Unknown')} / {row_data.get('Job Title', 'Unknown')}: {e}")
+            
+            return {
+                'created': created_count,
+                'updated': updated_count,
+                'errors': error_count,
+                'error_details': error_details
+            }
+        except Exception as e:
+            raise RuntimeError(f"Error pushing to sheet: {e}")
 

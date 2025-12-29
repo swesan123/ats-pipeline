@@ -15,6 +15,7 @@ from src.gui.projects_section import render_projects_section
 from src.gui.skills_section import render_skills_section
 from src.gui.resumes_page import render_resumes_page
 from src.gui.resume_template_section import render_resume_template_section
+from src.gui.analytics_page import render_analytics_page
 
 
 def main():
@@ -38,12 +39,12 @@ def main():
         st.session_state.current_page = "Jobs"
     
     # Navigation bar
-    nav_cols = st.columns(6)
-    pages = ["Jobs", "Experience", "Projects", "Skills", "Resumes", "Settings"]
+    nav_cols = st.columns(7)
+    pages = ["Jobs", "Experience", "Projects", "Skills", "Resumes", "Analytics", "Settings"]
     
     for i, page in enumerate(pages):
         with nav_cols[i]:
-            if st.button(page, use_container_width=True, 
+            if st.button(page, width='stretch', 
                         type="primary" if st.session_state.current_page == page else "secondary",
                         key=f"nav_{page}"):
                 st.session_state.current_page = page
@@ -62,9 +63,11 @@ def main():
         elif st.session_state.current_page == "Projects":
             render_projects_section()
         elif st.session_state.current_page == "Skills":
-            render_skills_section()
+            render_skills_section(st.session_state.db)
         elif st.session_state.current_page == "Resumes":
             render_resumes_page(st.session_state.db)
+        elif st.session_state.current_page == "Analytics":
+            render_analytics_page(st.session_state.db)
         elif st.session_state.current_page == "Settings":
             st.header("Settings")
             st.info("Settings panel coming soon")

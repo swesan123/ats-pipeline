@@ -67,6 +67,10 @@ class ResumeManager:
         pdf_path = resume_dir / f"{filename}.pdf"
         try:
             renderer.render_pdf(resume, pdf_path)
+            
+            # Track resume generated event (if db available)
+            # Note: This requires db to be passed or accessed differently
+            # Tracking will be done at the calling code level
         except Exception as e:
             # If PDF generation fails, still save JSON
             import warnings

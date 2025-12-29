@@ -190,4 +190,129 @@ class GoogleSheetsClient:
                 jobs.append(job_data)
         
         return jobs
+    
+    def write_sheet(self, data: List[Dict[str, any]], sheet_name: str = "Sheet1", clear_first: bool = False) -> Dict[str, int]:
+        """Write data to Google Sheets.
+        
+        Args:
+            data: List of dictionaries to write (one per row)
+            sheet_name: Name of the sheet to write to
+            clear_first: If True, clear the sheet before writing
+            
+        Returns:
+            Dictionary with stats: {'created': int, 'updated': int, 'errors': int}
+        """
+        try:
+            # Get or create worksheet
+            try:
+                worksheet = self.spreadsheet.worksheet(sheet_name)
+            except gspread.exceptions.WorksheetNotFound:
+                # Create new worksheet
+                worksheet = self.spreadsheet.add_worksheet(title=sheet_name, rows=1000, cols=20)
+            
+            if not data:
+                return {'created': 0, 'updated': 0, 'errors': 0}
+            
+            # Get headers from first row or use keys from first data item
+            if clear_first:
+                worksheet.clear()
+            
+            # Get existing headers if sheet has data
+            existing_headers = []
+            try:
+                existing_headers = worksheet.row_values(1)
+            except:
+                pass
+            
+            # Determine headers
+            if existing_headers and not clear_first:
+                headers = existing_headers
+            else:
+                # Use keys from first data item
+                headers = list(data[0].keys())
+                # Write headers
+                worksheet.append_row(headers)
+            
+            # Map data to header order
+            rows_to_write = []
+            for row_data in data:
+                row = [row_data.get(header, '') for header in headers]
+                rows_to_write.append(row)
+            
+            # Write data
+            if rows_to_write:
+                if clear_first:
+                    # Clear and write headers + data
+                    worksheet.clear()
+                    worksheet.append_row(headers)
+                    worksheet.append_rows(rows_to_write)
+                else:
+                    # Append to existing data
+                    worksheet.append_rows(rows_to_write)
+            
+            return {
+                'created': len(rows_to_write),
+                'updated': 0,  # Write doesn't track updates vs creates
+                'errors': 0
+            }
+        except Exception as e:
+            raise RuntimeError(f"Error writing to sheet: {e}")
+    
+    def update_or_append_row(self, row_data: Dict[str, any], sheet_name: str, match_columns: List[str]) -> tuple[bool, int]:
+        """Update existing row or append new row.
+        
+        Args:
+            row_data: Dictionary with row data
+            sheet_name: Name of the sheet
+            match_columns: Column names to use for matching (e.g., ['Company Name', 'Job Title'])
+            
+        Returns:
+            Tuple of (was_updated: bool, row_number: int)
+        """
+        try:
+            worksheet = self.spreadsheet.worksheet(sheet_name)
+            
+            # Get headers
+            headers = worksheet.row_values(1)
+            if not headers:
+                # No headers, create them
+                headers = list(row_data.keys())
+                worksheet.append_row(headers)
+            
+            # Get all existing rows
+            all_values = worksheet.get_all_values()
+            if len(all_values) <= 1:
+                # Only headers, append new row
+                row = [row_data.get(header, '') for header in headers]
+                worksheet.append_row(row)
+                return False, len(all_values) + 1
+            
+            # Find matching row
+            header_indices = {header: i for i, header in enumerate(headers)}
+            match_indices = [header_indices.get(col) for col in match_columns if col in header_indices]
+            
+            for row_num, row_values in enumerate(all_values[1:], start=2):  # Skip header row
+                # Check if this row matches
+                matches = True
+                for col, idx in zip(match_columns, match_indices):
+                    if idx is not None:
+                        existing_value = row_values[idx] if idx < len(row_values) else ''
+                        new_value = str(row_data.get(col, ''))
+                        if existing_value.strip().lower() != new_value.strip().lower():
+                            matches = False
+                            break
+                
+                if matches:
+                    # Update existing row
+                    row = [str(row_data.get(header, '')) for header in headers]
+                    worksheet.update(f"A{row_num}:{chr(64+len(headers))}{row_num}", [row])
+                    return True, row_num
+            
+            # No match found, append new row
+            row = [str(row_data.get(header, '')) for header in headers]
+            worksheet.append_row(row)
+            return False, len(all_values) + 1
+            
+        except Exception as e:
+            raise RuntimeError(f"Error updating/appending row: {e}")
 

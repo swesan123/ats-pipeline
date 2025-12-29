@@ -169,37 +169,37 @@ def render_job_details(db: Database, job: dict):
             st.session_state[f'delete_job_id'] = job['id']
             st.session_state[f'delete_confirm_{job["id"]}'] = True
             st.rerun()
-    
-    # Handle delete confirmation
-    if st.session_state.get(f'delete_confirm_{job["id"]}', False):
-        st.warning("⚠️ Are you sure you want to delete this job? This action cannot be undone.")
-        col1, col2 = st.columns(2)
-        with col1:
-            confirm_key = f"confirm_delete_{job['id']}"
-            if st.button("Yes, Delete", type="primary", key=confirm_key):
-                try:
-                    db.delete_job(job['id'])
-                    st.success("Job deleted successfully")
-                    # Clean up session state
-                    if f'delete_job_id' in st.session_state:
-                        del st.session_state[f'delete_job_id']
+        
+        # Handle delete confirmation - appears right beneath Delete button
+        if st.session_state.get(f'delete_confirm_{job["id"]}', False):
+            st.warning("Are you sure you want to delete this job? This action cannot be undone.")
+            confirm_col1, confirm_col2 = st.columns(2)
+            with confirm_col1:
+                confirm_key = f"confirm_delete_{job['id']}"
+                if st.button("Yes, Delete", type="primary", key=confirm_key):
+                    try:
+                        db.delete_job(job['id'])
+                        st.success("Job deleted successfully")
+                        # Clean up session state
+                        if f'delete_job_id' in st.session_state:
+                            del st.session_state[f'delete_job_id']
+                        if f'delete_confirm_{job["id"]}' in st.session_state:
+                            del st.session_state[f'delete_confirm_{job["id"]}']
+                        if 'selected_job_id' in st.session_state:
+                            del st.session_state['selected_job_id']
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error deleting job: {e}")
+                        import traceback
+                        st.exception(e)
+            with confirm_col2:
+                cancel_key = f"cancel_delete_{job['id']}"
+                if st.button("Cancel", key=cancel_key):
                     if f'delete_confirm_{job["id"]}' in st.session_state:
                         del st.session_state[f'delete_confirm_{job["id"]}']
-                    if 'selected_job_id' in st.session_state:
-                        del st.session_state['selected_job_id']
+                    if f'delete_job_id' in st.session_state:
+                        del st.session_state[f'delete_job_id']
                     st.rerun()
-                except Exception as e:
-                    st.error(f"Error deleting job: {e}")
-                    import traceback
-                    st.exception(e)
-        with col2:
-            cancel_key = f"cancel_delete_{job['id']}"
-            if st.button("Cancel", key=cancel_key):
-                if f'delete_confirm_{job["id"]}' in st.session_state:
-                    del st.session_state[f'delete_confirm_{job["id"]}']
-                if f'delete_job_id' in st.session_state:
-                    del st.session_state[f'delete_job_id']
-                st.rerun()
     
     # Get job skills
     job_skills = db.get_job_skills(job['id'])
@@ -283,6 +283,7 @@ def render_job_details(db: Database, job: dict):
         if 'resume_generation_state' not in st.session_state:
             # Don't delete - keep it so button is rendered on next render
             # The key will be deleted when workflow actually starts
+            pass
         else:
             del st.session_state['generate_resume_job_id']
     

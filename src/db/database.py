@@ -4,7 +4,7 @@ import json
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 from src.models.resume import Resume, Reasoning
 from src.models.job import JobPosting, JobSkills, JobMatch
@@ -194,7 +194,29 @@ class Database:
         ))
         
         self.conn.commit()
-        return cursor.lastrowid
+        job_id = cursor.lastrowid
+        
+        # Track event and start time-to-apply tracking
+        try:
+            from src.analytics.event_tracker import EventTracker
+            from src.analytics.time_tracker import TimeToApplyTracker
+            
+            event_tracker = EventTracker(self)
+            time_tracker = TimeToApplyTracker(self)
+            
+            # Track job_added event
+            event_tracker.track_event(
+                EventTracker.EVENT_JOB_ADDED,
+                metadata={'job_id': job_id, 'company': job.company, 'title': job.title}
+            )
+            
+            # Start time-to-apply tracking
+            time_tracker.start_tracking(job_id)
+        except Exception:
+            # Don't fail if analytics tracking fails
+            pass
+        
+        return job_id
     
     def get_job(self, job_id: int) -> Optional[JobPosting]:
         """Get job posting by ID."""
@@ -245,13 +267,43 @@ class Database:
     
     def update_job_status(self, job_id: int, status: str) -> None:
         """Update job status."""
+        # Get old status for tracking
         cursor = self.conn.cursor()
+        cursor.execute("SELECT status FROM jobs WHERE id = ?", (job_id,))
+        old_status_row = cursor.fetchone()
+        old_status = old_status_row['status'] if old_status_row else None
+        
         cursor.execute("""
             UPDATE jobs
             SET status = ?
             WHERE id = ?
         """, (status, job_id))
         self.conn.commit()
+        
+        # Track event and complete time-to-apply if status changed to "Applied"
+        try:
+            from src.analytics.event_tracker import EventTracker
+            from src.analytics.time_tracker import TimeToApplyTracker
+            
+            event_tracker = EventTracker(self)
+            time_tracker = TimeToApplyTracker(self)
+            
+            # Track status change event
+            event_tracker.track_event(
+                EventTracker.EVENT_JOB_STATUS_CHANGED,
+                metadata={
+                    'job_id': job_id,
+                    'old_status': old_status,
+                    'new_status': status
+                }
+            )
+            
+            # Complete time-to-apply tracking if status is "Applied"
+            if status == "Applied" and old_status != "Applied":
+                time_tracker.complete_tracking(job_id)
+        except Exception:
+            # Don't fail if analytics tracking fails
+            pass
     
     def delete_job(self, job_id: int) -> None:
         """Delete a job and all associated data."""
@@ -518,4 +570,114 @@ class Database:
                     pass
             jobs.append(job_dict)
         return jobs
+    
+    def track_event(self, event_type: str, metadata: Optional[Dict] = None) -> int:
+        """Track an analytics event.
+        
+        Args:
+            event_type: Type of event
+            metadata: Optional event metadata
+            
+        Returns:
+            Event ID
+        """
+        import json
+        metadata_json = json.dumps(metadata) if metadata else None
+        
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            INSERT INTO analytics_events (event_type, metadata_json, created_at)
+            VALUES (?, ?, ?)
+        """, (event_type, metadata_json, datetime.now()))
+        
+        self.conn.commit()
+        return cursor.lastrowid
+    
+    def get_time_to_apply_stats(self) -> Dict:
+        """Get time-to-apply statistics.
+        
+        Returns:
+            Dictionary with stats
+        """
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT 
+                COUNT(*) as count,
+                AVG(duration_seconds) as avg_seconds,
+                MIN(duration_seconds) as min_seconds,
+                MAX(duration_seconds) as max_seconds
+            FROM time_to_apply
+            WHERE duration_seconds IS NOT NULL
+        """)
+        
+        result = cursor.fetchone()
+        
+        # Calculate median
+        cursor.execute("""
+            SELECT duration_seconds
+            FROM time_to_apply
+            WHERE duration_seconds IS NOT NULL
+            ORDER BY duration_seconds
+        """)
+        durations = [row['duration_seconds'] for row in cursor.fetchall()]
+        median_seconds = None
+        if durations:
+            n = len(durations)
+            if n % 2 == 0:
+                median_seconds = (durations[n//2 - 1] + durations[n//2]) / 2
+            else:
+                median_seconds = durations[n//2]
+        
+        return {
+            'count': result['count'] if result else 0,
+            'average_seconds': result['avg_seconds'] if result and result['avg_seconds'] else None,
+            'min_seconds': result['min_seconds'] if result else None,
+            'max_seconds': result['max_seconds'] if result else None,
+            'median_seconds': median_seconds,
+        }
+    
+    def get_missing_skills_ranked(
+        self, 
+        limit: int = 20, 
+        by: str = 'priority'
+    ) -> List[Dict]:
+        """Get missing skills ranked by frequency or priority.
+        
+        Args:
+            limit: Maximum number of skills to return
+            by: 'priority' or 'frequency'
+            
+        Returns:
+            List of skill dictionaries
+        """
+        cursor = self.conn.cursor()
+        
+        if by == 'frequency':
+            cursor.execute("""
+                SELECT skill_name, frequency_count, required_count, preferred_count, 
+                       general_count, priority_score
+                FROM missing_skills_aggregation
+                ORDER BY frequency_count DESC, priority_score DESC
+                LIMIT ?
+            """, (limit,))
+        else:
+            cursor.execute("""
+                SELECT skill_name, frequency_count, required_count, preferred_count, 
+                       general_count, priority_score
+                FROM missing_skills_aggregation
+                ORDER BY priority_score DESC, frequency_count DESC
+                LIMIT ?
+            """, (limit,))
+        
+        return [dict(row) for row in cursor.fetchall()]
+    
+    def update_missing_skills_aggregation(self) -> int:
+        """Update the missing skills aggregation cache.
+        
+        Returns:
+            Number of skills updated
+        """
+        from src.analytics.skills_aggregator import MissingSkillsAggregator
+        aggregator = MissingSkillsAggregator(self)
+        return aggregator.update_aggregation_cache()
 

@@ -129,12 +129,67 @@ def create_tables(conn: sqlite3.Connection) -> None:
         )
     """)
     
+    # Analytics events table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS analytics_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_type TEXT NOT NULL,
+            metadata_json TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
+    # Time-to-apply tracking
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS time_to_apply (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id INTEGER NOT NULL,
+            created_at TIMESTAMP NOT NULL,
+            applied_at TIMESTAMP,
+            duration_seconds INTEGER,
+            FOREIGN KEY (job_id) REFERENCES jobs(id)
+        )
+    """)
+    
+    # Missing skills aggregation cache
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS missing_skills_aggregation (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            skill_name TEXT NOT NULL,
+            frequency_count INTEGER DEFAULT 0,
+            required_count INTEGER DEFAULT 0,
+            preferred_count INTEGER DEFAULT 0,
+            general_count INTEGER DEFAULT 0,
+            priority_score REAL DEFAULT 0.0,
+            last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(skill_name)
+        )
+    """)
+    
+    # Add evidence tracking columns if they don't exist
+    evidence_columns = [
+        ("job_evidence_json", "TEXT"),
+        ("resume_coverage", "TEXT"),
+        ("is_generic", "BOOLEAN DEFAULT 0"),
+        ("decomposition_json", "TEXT"),
+    ]
+    for column_name, column_type in evidence_columns:
+        try:
+            cursor.execute(f"ALTER TABLE missing_skills_aggregation ADD COLUMN {column_name} {column_type}")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+    
     # Create indexes
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_job_matches_job_id ON job_matches(job_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_job_matches_resume_id ON job_matches(resume_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_bullet_changes_resume_id ON bullet_changes(resume_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_applications_job_id ON applications(job_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_applications_resume_id ON applications(resume_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_analytics_events_event_type ON analytics_events(event_type)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_analytics_events_created_at ON analytics_events(created_at)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_time_to_apply_job_id ON time_to_apply(job_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_missing_skills_skill_name ON missing_skills_aggregation(skill_name)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_missing_skills_priority_score ON missing_skills_aggregation(priority_score)")
     
     conn.commit()
 

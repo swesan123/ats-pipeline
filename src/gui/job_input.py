@@ -89,9 +89,19 @@ def _extract_job_info_from_text(text: str) -> tuple[str, str]:
         title = re.sub(r'\s+Toronto.*$', '', title, flags=re.IGNORECASE).strip()
         title = re.sub(r'\s+\d+\s+weeks?\s+ago.*$', '', title, flags=re.IGNORECASE).strip()
     
-    # Pattern 4: Look for company in "About the job" or "Who We Are" sections
+    # Pattern 4: Look for company in "At [Company], we..." pattern (common in job descriptions)
     if company == "Unknown":
-        # Try to find company name in context like "Denvr is a..." or "At Denvr, we..."
+        # Match "At [Company], we..." or "At [Company] Labs, we..." etc.
+        company_match = re.search(r'^At\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?(?:\s+Labs)?),?\s+(?:we|we\'re|our)', text_clean, re.IGNORECASE)
+        if company_match:
+            potential_company = company_match.group(1).strip()
+            # Filter out common false positives
+            if potential_company not in ['We', 'The', 'This', 'Our', 'They', 'These', 'Who'] and len(potential_company) < 50:
+                company = potential_company
+    
+    # Pattern 5: Look for company in "About the job" or "Who We Are" sections
+    if company == "Unknown":
+        # Try to find company name in context like "Denvr is a..." or "[Company] is a..."
         company_match = re.search(r'(?:^|\.|Who We Are)\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)\s+(?:is|are|provides|offers|designs|has)', text_clean, re.IGNORECASE)
         if company_match:
             potential_company = company_match.group(1).strip()
@@ -99,7 +109,78 @@ def _extract_job_info_from_text(text: str) -> tuple[str, str]:
             if potential_company not in ['We', 'The', 'This', 'Our', 'They', 'These', 'Who'] and len(potential_company) < 30:
                 company = potential_company
     
+    # Pattern 6: Look for job title in "Key Duties" or "Essential Skills" sections
+    # Sometimes the title appears in the first line or in section headers
+    if title == "Unknown":
+        # Look for common job title patterns at the start
+        title_match = re.search(r'^([A-Z][a-zA-Z\s&]{5,60}?(?:Engineer|Developer|Manager|Analyst|Architect|Scientist|Specialist|Consultant|Lead|Director|VP|President|Designer|Coordinator|Compiler|Runtime|Systems))', text_clean[:500], re.IGNORECASE)
+        if title_match:
+            potential_title = title_match.group(1).strip()
+            # Clean up
+            potential_title = re.sub(r'\s+(Toronto|New York|Hybrid|Remote|Show|Apply|Save|At).*$', '', potential_title, flags=re.IGNORECASE).strip()
+            if len(potential_title) > 5 and len(potential_title) < 80:
+                title = potential_title
+    
     return title, company
+
+
+def _save_job_from_text(db: Database, text: str, source_url: str = None, 
+                        manual_title: str = None, manual_company: str = None):
+    """Save a job from text description.
+    
+    Args:
+        db: Database instance
+        text: Job description text
+        source_url: Optional source URL
+        manual_title: Optional manually provided job title (overrides auto-detection)
+        manual_company: Optional manually provided company name (overrides auto-detection)
+    """
+    from src.extractors.job_skills import JobSkillExtractor
+    from src.gui.job_helpers import auto_match_skills
+    from src.models.resume import Resume
+    import json
+    
+    # Extract job info (use manual values if provided, otherwise auto-detect)
+    if manual_title and manual_company:
+        title, company = manual_title, manual_company
+    elif manual_title:
+        _, company = _extract_job_info_from_text(text)
+        title = manual_title
+    elif manual_company:
+        title, _ = _extract_job_info_from_text(text)
+        company = manual_company
+    else:
+        title, company = _extract_job_info_from_text(text)
+    job_posting = JobPosting(
+        company=company,
+        title=title,
+        description=text,
+        source_url=source_url,
+    )
+    
+    # Extract skills
+    extractor = JobSkillExtractor()
+    job_skills = extractor.extract_skills(job_posting)
+    
+    # Save to database
+    job_id = db.save_job(job_posting, job_skills)
+    
+    # Auto-match skills if resume exists
+    resume = db.get_latest_resume()
+    if not resume:
+        resume_path = Path("data/resume.json")
+        if resume_path.exists():
+            try:
+                with open(resume_path, 'r', encoding='utf-8') as f:
+                    resume_data = json.load(f)
+                resume = Resume.model_validate(resume_data)
+            except:
+                resume = None
+    
+    if resume:
+        auto_match_skills(db, job_id, resume)
+    
+    return job_id
 
 
 def render_job_input(db: Database):

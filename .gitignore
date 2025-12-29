@@ -47,6 +47,8 @@ venv.bak/
 # Database
 *.db
 *.sqlite
+*.db-journal
+test_*.db
 *.sqlite3
 ats_pipeline.db
 
@@ -100,6 +102,7 @@ temp/
 
 # Resumes directory
 resumes/
+analytics/
 
 # Credentials and API keys (NEVER commit these!)
 *credentials*.json
