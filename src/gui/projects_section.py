@@ -125,7 +125,6 @@ def render_projects_section():
                         # Get value from session state key (set by text_area widget)
                         bullet_text = st.session_state.get(f"project_bullet_{i}", "")
                         if bullet_text and bullet_text.strip():
-                            from src.models.resume import Bullet
                             bullets.append(Bullet(text=bullet_text.strip(), skills=[], evidence=None))
                     
                     if not bullets:

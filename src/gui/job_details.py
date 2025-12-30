@@ -730,7 +730,8 @@ def _handle_resume_generation_workflow(
                 pass  # Use current resume if parsing fails
         
         from src.gui.resume_diff import render_resume_diff
-        render_resume_diff(original_for_diff, updated_resume, job)
+        # Pass job_skills for ATS highlighting in both PDFs
+        render_resume_diff(original_for_diff, updated_resume, job, job_skills=job_skills)
         
         # Generate PDF preview
         try:
