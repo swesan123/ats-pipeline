@@ -263,8 +263,15 @@ class ResumeApprovalWorkflow:
         
         return updated_resume
     
-    def _update_skills_section(self, resume: Resume) -> None:
-        """Update skills section based on skills mentioned in all bullets."""
+    def _update_skills_section(self, resume: Resume, job_skills: Optional[List[str]] = None) -> None:
+        """Update skills section based on skills mentioned in all bullets.
+        
+        Args:
+            resume: Resume to update
+            job_skills: Optional list of job-relevant skills to prioritize
+        """
+        from src.utils.skill_categorizer import categorize_skills
+        
         # Collect all unique skills from experience and projects
         all_skills = set()
         
@@ -279,54 +286,10 @@ class ResumeApprovalWorkflow:
             for bullet in project.bullets:
                 all_skills.update(bullet.skills)
         
-        # Common skill categories and their typical skills
-        skill_categories = {
-            "Languages": ["Python", "Java", "C", "C++", "C#", "JavaScript", "TypeScript", "Go", "Golang", "Swift", "Kotlin", "Rust", "Ruby", "PHP", "SQL", "R", "MATLAB"],
-            "ML/AI": ["NumPy", "pandas", "scikit-learn", "TensorFlow", "PyTorch", "Keras", "Matplotlib", "Seaborn", "Jupyter", "Pandas"],
-            "Mobile/Web": ["React", "React Native", "Vue", "Angular", "Node.js", "Express", "Django", "Flask", "FastAPI", "Next.js", "HTML", "CSS", "Tailwind", "Bootstrap"],
-            "Backend/DB": ["PostgreSQL", "MySQL", "MongoDB", "Redis", "Docker", "Kubernetes", "AWS", "GCP", "Azure", "tRPC", "GraphQL", "REST", "JWT", "Drizzle"],
-            "DevOps": ["Docker", "Kubernetes", "Jenkins", "GitLab CI", "GitHub Actions", "Terraform", "Ansible", "Linux", "Bash", "Shell"]
-        }
+        # Categorize skills using shared utility
+        categorized_skills = categorize_skills(list(all_skills), job_skills)
         
-        # Categorize skills
-        categorized_skills = {category: [] for category in skill_categories.keys()}
-        uncategorized = []
-        
-        for skill in all_skills:
-            skill_lower = skill.lower()
-            categorized = False
-            
-            # Try to match skill to a category
-            for category, typical_skills in skill_categories.items():
-                for typical in typical_skills:
-                    if typical.lower() in skill_lower or skill_lower in typical.lower():
-                        if skill not in categorized_skills[category]:
-                            categorized_skills[category].append(skill)
-                        categorized = True
-                        break
-                if categorized:
-                    break
-            
-            if not categorized:
-                uncategorized.append(skill)
-        
-        # Update resume skills, preserving existing structure but adding new skills
-        for category, skills_list in categorized_skills.items():
-            if category not in resume.skills:
-                resume.skills[category] = []
-            # Add new skills that aren't already there
-            for skill in skills_list:
-                if skill not in resume.skills[category]:
-                    resume.skills[category].append(skill)
-        
-        # Add uncategorized skills to "Languages" if they look like languages
-        if uncategorized:
-            # Simple heuristic: if it's a common programming language name, add to Languages
-            common_langs = ["golang", "swift", "kotlin", "rust", "ruby", "php", "r", "matlab", "scala", "clojure"]
-            for skill in uncategorized:
-                if any(lang in skill.lower() for lang in common_langs):
-                    if "Languages" not in resume.skills:
-                        resume.skills["Languages"] = []
-                    if skill not in resume.skills["Languages"]:
-                        resume.skills["Languages"].append(skill)
+        # Update resume skills, replacing with categorized version
+        # This removes skills that are no longer mentioned in any bullet
+        resume.skills = categorized_skills
 

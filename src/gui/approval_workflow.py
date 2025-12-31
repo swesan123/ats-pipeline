@@ -10,6 +10,7 @@ sys.path.insert(0, str(project_root))
 
 import streamlit as st
 from src.models.resume import Bullet, Reasoning, BulletCandidate
+from src.compilation.bullet_feedback import BulletFeedbackStore
 
 
 def render_approval_workflow(
@@ -19,6 +20,7 @@ def render_approval_workflow(
     bullet_num: int,
     total_bullets: int,
     regenerate_callback: Optional[Callable[[str], None]] = None,
+    rewrite_intent: Optional[str] = None,
 ) -> tuple[bool, Optional[int], Optional[str]]:
     """Render approval workflow UI with ranked candidates.
     
@@ -29,6 +31,7 @@ def render_approval_workflow(
         bullet_num: Current bullet number
         total_bullets: Total number of bullets
         regenerate_callback: Optional callback for rewrite intents (takes intent: str)
+        rewrite_intent: Current rewrite intent mode
     
     Returns: (approved, selected_candidate_index, rewrite_intent)
     - approved: True if approved, False if rejected, None if pending
@@ -38,6 +41,29 @@ def render_approval_workflow(
     st.progress(bullet_num / total_bullets, text=f"Processing bullet {bullet_num} of {total_bullets}")
     
     st.subheader(f"Bullet {bullet_num} of {total_bullets}")
+    
+    # Display rewrite mode selector
+    if regenerate_callback:
+        st.write("**Rewrite Mode:**")
+        mode_options = ["emphasize_skills", "reword_only", "more_technical", "more_concise", "conservative"]
+        mode_labels = {
+            "emphasize_skills": "Emphasize Skills (add job keywords)",
+            "reword_only": "Reword Only (no new skills)",
+            "more_technical": "More Technical",
+            "more_concise": "More Concise",
+            "conservative": "Conservative"
+        }
+        current_mode = rewrite_intent or "emphasize_skills"
+        selected_mode = st.radio(
+            "Select rewrite mode:",
+            options=mode_options,
+            format_func=lambda x: mode_labels.get(x, x),
+            index=mode_options.index(current_mode) if current_mode in mode_options else 0,
+            key=f"rewrite_mode_{bullet_num}",
+        )
+        if selected_mode != current_mode:
+            # Mode changed - trigger regeneration
+            return None, None, selected_mode
     
     # Display original
     st.write("**Original Bullet:**")
@@ -140,19 +166,103 @@ def render_approval_workflow(
     
     selected_candidate = candidates[selected_option]
     
+    # Feedback collection UI (optional)
+    with st.expander("Provide Feedback (Optional)", expanded=False):
+        # Star rating widget
+        rating_options = [None, 1, 2, 3, 4, 5]
+        rating_labels = {
+            None: "No rating",
+            1: "⭐ (1 star)",
+            2: "⭐⭐ (2 stars)",
+            3: "⭐⭐⭐ (3 stars)",
+            4: "⭐⭐⭐⭐ (4 stars)",
+            5: "⭐⭐⭐⭐⭐ (5 stars)"
+        }
+        current_rating = st.session_state.get(f'rating_{bullet_num}', None)
+        rating_index = rating_options.index(current_rating) if current_rating in rating_options else 0
+        selected_rating = st.selectbox(
+            "Rate this bullet (optional)",
+            options=rating_options,
+            format_func=lambda x: rating_labels.get(x, "No rating"),
+            index=rating_index,
+            key=f"rating_select_{bullet_num}",
+        )
+        st.session_state[f'rating_{bullet_num}'] = selected_rating
+        
+        # Comment text area
+        current_comment = st.session_state.get(f'comment_{bullet_num}', "")
+        comment = st.text_area(
+            "Additional feedback (optional)",
+            value=current_comment,
+            placeholder="E.g., 'Too technical', 'Perfect length', 'Needs more detail'",
+            height=80,
+            key=f"comment_{bullet_num}",
+        )
+        st.session_state[f'comment_{bullet_num}'] = comment
+        
+        # Rejection reason (shown conditionally when user wants to reject)
+        show_rejection_reason = st.checkbox(
+            "I plan to reject this bullet",
+            key=f"show_rejection_reason_{bullet_num}",
+            help="Check this to provide a reason for rejection"
+        )
+        if show_rejection_reason:
+            current_rejection_reason = st.session_state.get(f'rejection_reason_{bullet_num}', "")
+            rejection_reason = st.text_area(
+                "Why are you rejecting this? (optional)",
+                value=current_rejection_reason,
+                placeholder="E.g., 'Too long', 'Doesn't match my experience', 'Wrong tone'",
+                height=60,
+                key=f"rejection_reason_{bullet_num}",
+            )
+            st.session_state[f'rejection_reason_{bullet_num}'] = rejection_reason
+    
     # Action buttons
     col1, col2, col3, col4, col5 = st.columns(5)
+    feedback_store = BulletFeedbackStore()
     
     with col1:
         approve_btn = st.button("Accept", type="primary", key=f"approve_{bullet_num}")
         if approve_btn:
             st.session_state[f'approved_{bullet_num}'] = selected_option
+            # Collect feedback from session state
+            rating = st.session_state.get(f'rating_{bullet_num}')
+            comment = st.session_state.get(f'comment_{bullet_num}', "")
+            # Record feedback for future generations
+            feedback_store.record_feedback(
+                action="accepted",
+                candidate=selected_candidate,
+                rewrite_intent=selected_candidate.rewrite_intent,
+                rating=rating,
+                comment=comment if comment else None,
+            )
+            # Clear feedback from session state after recording
+            for key in [f'rating_{bullet_num}', f'comment_{bullet_num}', f'rejection_reason_{bullet_num}', f'show_rejection_reason_{bullet_num}']:
+                if key in st.session_state:
+                    del st.session_state[key]
             return True, selected_option, None
     
     with col2:
         reject_btn = st.button("Reject", key=f"reject_{bullet_num}")
         if reject_btn:
             st.session_state[f'rejected_{bullet_num}'] = True
+            # Collect feedback from session state
+            rating = st.session_state.get(f'rating_{bullet_num}')
+            comment = st.session_state.get(f'comment_{bullet_num}', "")
+            rejection_reason = st.session_state.get(f'rejection_reason_{bullet_num}', "")
+            # Record feedback for future generations
+            feedback_store.record_feedback(
+                action="rejected",
+                candidate=primary,
+                rewrite_intent=primary.rewrite_intent,
+                rating=rating,
+                comment=comment if comment else None,
+                rejection_reason=rejection_reason if rejection_reason else None,
+            )
+            # Clear feedback from session state after recording
+            for key in [f'rating_{bullet_num}', f'comment_{bullet_num}', f'rejection_reason_{bullet_num}', f'show_rejection_reason_{bullet_num}']:
+                if key in st.session_state:
+                    del st.session_state[key]
             return False, None, None
     
     # Rewrite intent buttons

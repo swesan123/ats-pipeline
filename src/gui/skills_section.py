@@ -11,10 +11,11 @@ import streamlit as st
 import json
 import pandas as pd
 from typing import List, Dict
-from src.models.skills import UserSkills, UserSkill
+from src.models.skills import UserSkills, UserSkill, SkillEvidence
 from src.projects.project_library import ProjectLibrary
 from src.db.database import Database
 from src.analytics.analytics_service import AnalyticsService
+from src.utils.skill_ai_assistant import SkillAIAssistant
 
 
 def render_skills_section(db: Database = None):
@@ -50,15 +51,27 @@ def render_skills_section(db: Database = None):
             category = st.selectbox("Category", 
                                    ["Languages", "ML/AI", "Mobile/Web", "Backend/DB", "DevOps", "Other"],
                                    key="skill_category")
-            proficiency = st.selectbox("Proficiency Level",
-                                      ["beginner", "intermediate", "advanced", "expert"],
-                                      key="skill_proficiency")
             
             # Project selection (multi-select)
             selected_projects = st.multiselect("Associated Projects",
                                                project_names,
                                                key="skill_projects",
                                                help="Select projects that demonstrate this skill")
+            # Optional evidence source (experience / project / coursework / certification)
+            evidence_type = st.selectbox(
+                "Primary Evidence Type (optional)",
+                ["", "experience", "project", "coursework", "certification"],
+                key="skill_evidence_type",
+            )
+            evidence_name = st.text_input(
+                "Evidence Name (e.g., AMD Datacenter Co-op, Hitchly, Course title)",
+                key="skill_evidence_name",
+            )
+            evidence_text = st.text_area(
+                "Evidence Snippet (optional)",
+                key="skill_evidence_text",
+                help="Optional short description showing where you used this skill.",
+            )
             
             submitted = st.form_submit_button("Add Skill", type="primary")
             
@@ -72,16 +85,34 @@ def render_skills_section(db: Database = None):
                     if existing_skill:
                         # Update existing skill
                         existing_skill.category = category
-                        existing_skill.proficiency_level = proficiency
                         existing_skill.projects = selected_projects
+                        # Append evidence source if provided
+                        if evidence_type and evidence_name:
+                            existing_skill.evidence_sources.append(
+                                SkillEvidence(
+                                    source_type=evidence_type,
+                                    source_name=evidence_name,
+                                    evidence_text=evidence_text or None,
+                                )
+                            )
                         st.success(f"Skill '{skill_name}' updated!")
                     else:
+                        # Build evidence list if provided
+                        evidence_sources = []
+                        if evidence_type and evidence_name:
+                            evidence_sources.append(
+                                SkillEvidence(
+                                    source_type=evidence_type,
+                                    source_name=evidence_name,
+                                    evidence_text=evidence_text or None,
+                                )
+                            )
                         # Add new skill
                         new_skill = UserSkill(
                             name=skill_name,
                             category=category,
-                            proficiency_level=proficiency,
-                            projects=selected_projects
+                            projects=selected_projects,
+                            evidence_sources=evidence_sources,
                         )
                         user_skills.skills.append(new_skill)
                         st.success(f"Skill '{skill_name}' added!")
@@ -90,17 +121,14 @@ def render_skills_section(db: Database = None):
                     with open(skills_file, 'w', encoding='utf-8') as f:
                         json.dump(user_skills.model_dump(), f, indent=2, default=str)
                     
-                    # Refresh missing skills aggregation if database is available
+                    # Mark that refresh is needed (defer actual refresh until user clicks Refresh button)
+                    # This avoids lag when adding skills
                     if db:
-                        try:
-                            analytics = AnalyticsService(db)
-                            analytics.refresh_missing_skills_aggregation()
-                        except Exception:
-                            pass  # Silently fail if refresh doesn't work
+                        st.session_state['missing_skills_refresh_needed'] = True
                     
                     st.rerun()
     
-    # Display existing skills by category
+    # Display existing skills by category, with edit capabilities
     if user_skills.skills:
         st.subheader(f"Your Skills ({len(user_skills.skills)})")
         
@@ -114,14 +142,85 @@ def render_skills_section(db: Database = None):
         
         for category, skills_list in sorted(by_category.items()):
             with st.expander(f"{category} ({len(skills_list)})", expanded=True):
-                for skill in skills_list:
-                    col1, col2, col3 = st.columns([2, 1, 1])
+                for idx, skill in enumerate(skills_list):
+                    col1, col2, col3 = st.columns([3, 1, 1])
                     with col1:
                         st.write(f"**{skill.name}**")
+                        meta_bits = []
                         if skill.projects:
-                            st.caption(f"Projects: {', '.join(skill.projects)}")
+                            meta_bits.append(f"Projects: {', '.join(skill.projects)}")
+                        if skill.evidence_sources:
+                            meta_bits.append(
+                                f"Evidence: {', '.join({e.source_name for e in skill.evidence_sources})}"
+                            )
+                        if meta_bits:
+                            st.caption(" | ".join(meta_bits))
                     with col2:
-                        st.caption(f"Level: {skill.proficiency_level}")
+                        # Edit inline
+                        with st.expander("Edit", expanded=False):
+                            new_name = st.text_input(
+                                "Name",
+                                value=skill.name,
+                                key=f"edit_skill_name_{category}_{idx}",
+                            )
+                            new_category = st.selectbox(
+                                "Category",
+                                ["Languages", "ML/AI", "Mobile/Web", "Backend/DB", "DevOps", "Other"],
+                                index=["Languages", "ML/AI", "Mobile/Web", "Backend/DB", "DevOps", "Other"].index(
+                                    skill.category if skill.category in ["Languages", "ML/AI", "Mobile/Web", "Backend/DB", "DevOps", "Other"] else "Other"
+                                ),
+                                key=f"edit_skill_cat_{category}_{idx}",
+                            )
+                            new_projects = st.multiselect(
+                                "Projects",
+                                project_names,
+                                default=skill.projects,
+                                key=f"edit_skill_projects_{category}_{idx}",
+                            )
+                            # Simple evidence editor: one primary evidence entry
+                            ev_name = st.text_input(
+                                "Primary Evidence Name",
+                                value=skill.evidence_sources[0].source_name
+                                if skill.evidence_sources
+                                else "",
+                                key=f"edit_skill_ev_name_{category}_{idx}",
+                            )
+                            ev_type = st.selectbox(
+                                "Evidence Type",
+                                ["", "experience", "project", "coursework", "certification"],
+                                index=(
+                                    ["", "experience", "project", "coursework", "certification"].index(
+                                        skill.evidence_sources[0].source_type
+                                    )
+                                    if skill.evidence_sources
+                                    else 0
+                                ),
+                                key=f"edit_skill_ev_type_{category}_{idx}",
+                            )
+                            ev_text = st.text_area(
+                                "Evidence Snippet",
+                                value=skill.evidence_sources[0].evidence_text
+                                if skill.evidence_sources and skill.evidence_sources[0].evidence_text
+                                else "",
+                                key=f"edit_skill_ev_text_{category}_{idx}",
+                            )
+                            if st.button("Save Changes", key=f"save_skill_{category}_{idx}", type="primary"):
+                                skill.name = new_name
+                                skill.category = new_category
+                                skill.projects = new_projects
+                                if ev_type and ev_name:
+                                    skill.evidence_sources = [
+                                        SkillEvidence(
+                                            source_type=ev_type,
+                                            source_name=ev_name,
+                                            evidence_text=ev_text or None,
+                                        )
+                                    ]
+                                # Persist changes
+                                with open(skills_file, 'w', encoding='utf-8') as f:
+                                    json.dump(user_skills.model_dump(), f, indent=2, default=str)
+                                st.success(f"Skill '{skill.name}' updated")
+                                st.rerun()
                     with col3:
                         if st.button("Delete", key=f"delete_skill_{skill.name}", type="secondary"):
                             user_skills.skills = [s for s in user_skills.skills if s.name != skill.name]
@@ -132,6 +231,43 @@ def render_skills_section(db: Database = None):
     else:
         st.info("No skills yet. Add your first skill above!")
     
+    # AI-assisted skill suggestions
+    st.divider()
+    with st.expander("AI Skill Suggestions (beta)", expanded=False):
+        st.caption("Paste a job description or project description to get suggested skills. Suggestions are never auto-added; you choose what to keep.")
+        suggestion_text = st.text_area(
+            "Text for analysis",
+            key="ai_skill_suggestion_text",
+            height=160,
+        )
+        if st.button("Suggest Skills", key="ai_skill_suggest_btn", type="secondary"):
+            assistant = SkillAIAssistant()
+            suggestions = assistant.suggest_skills(
+                suggestion_text,
+                existing_skills=[s.name for s in user_skills.skills],
+            )
+            if not suggestions:
+                st.info("No new skills suggested (or OpenAI API key not configured).")
+            else:
+                st.write("**Suggested Skills (click to add):**")
+                for idx, s in enumerate(suggestions):
+                    col_s1, col_s2 = st.columns([3, 1])
+                    with col_s1:
+                        st.write(f"- {s['name']} ({s['category']})")
+                    with col_s2:
+                        if st.button("Add", key=f"ai_add_skill_{idx}", type="primary"):
+                            new_skill = UserSkill(
+                                name=s["name"],
+                                category=s["category"],
+                                projects=[],
+                                evidence_sources=[],
+                            )
+                            user_skills.skills.append(new_skill)
+                            with open(skills_file, 'w', encoding='utf-8') as f:
+                                json.dump(user_skills.model_dump(), f, indent=2, default=str)
+                            st.success(f"Skill '{s['name']}' added from AI suggestion")
+                            st.rerun()
+
     # Missing Skills Analysis Section
     if db:
         st.divider()
@@ -141,13 +277,16 @@ def render_skills_section(db: Database = None):
         # Initialize analytics service
         analytics = AnalyticsService(db)
         
-        # Refresh button
+        # Refresh button - also show indicator if refresh is needed
         col_refresh, col_spacer = st.columns([1, 10])
         with col_refresh:
-            if st.button("Refresh", help="Update missing skills aggregation", key="refresh_missing_skills", width='stretch'):
+            refresh_needed = st.session_state.get('missing_skills_refresh_needed', False)
+            refresh_label = "Refresh" + (" ⚠️" if refresh_needed else "")
+            if st.button(refresh_label, help="Update missing skills aggregation", key="refresh_missing_skills", width='stretch'):
                 with st.spinner("Refreshing skills aggregation..."):
                     count = analytics.refresh_missing_skills_aggregation()
                     st.success(f"Updated {count} skills in aggregation cache")
+                    st.session_state['missing_skills_refresh_needed'] = False
                     st.rerun()
         
         # Get user's current skills for filtering
@@ -197,11 +336,11 @@ def render_skills_section(db: Database = None):
                         if category == "Other" and len(filtered_skills_by_category) > 1:
                             # Only show "Other" if there are other categories too
                             with st.expander(f"{category} ({len(skills_list)} skills)", expanded=False):
-                                _display_missing_skills_table(skills_list, sort_by='priority_score', user_skill_names=user_skill_names)
+                                _display_missing_skills_table(skills_list, sort_by='priority_score', user_skill_names=user_skill_names, category=category)
                         else:
                             # Use expandable sections for categories
                             with st.expander(f"{category} ({len(skills_list)} skills)", expanded=True):
-                                _display_missing_skills_table(skills_list, sort_by='priority_score', user_skill_names=user_skill_names)
+                                _display_missing_skills_table(skills_list, sort_by='priority_score', user_skill_names=user_skill_names, category=category)
                     
                     # Also show overall top skills chart
                     priority_skills = analytics.get_missing_skills_ranked(limit=20, by='priority')
@@ -261,11 +400,11 @@ def render_skills_section(db: Database = None):
                         if category == "Other" and len(filtered_skills_by_category) > 1:
                             # Only show "Other" if there are other categories too
                             with st.expander(f"{category} ({len(skills_list)} skills)", expanded=False):
-                                _display_missing_skills_table(skills_list, sort_by='frequency_count', user_skill_names=user_skill_names)
+                                _display_missing_skills_table(skills_list, sort_by='frequency_count', user_skill_names=user_skill_names, category=category)
                         else:
                             # Use expandable sections for categories
                             with st.expander(f"{category} ({len(skills_list)} skills)", expanded=True):
-                                _display_missing_skills_table(skills_list, sort_by='frequency_count', user_skill_names=user_skill_names)
+                                _display_missing_skills_table(skills_list, sort_by='frequency_count', user_skill_names=user_skill_names, category=category)
                     
                     # Also show overall top skills chart
                     frequency_skills = analytics.get_missing_skills_ranked(limit=20, by='frequency')
@@ -285,13 +424,14 @@ def render_skills_section(db: Database = None):
                 st.info("No missing skills data. Skills are aggregated from job matches. Try refreshing skills data.")
 
 
-def _display_missing_skills_table(skills_list: List[Dict], sort_by: str = 'priority_score', user_skill_names: set = None):
+def _display_missing_skills_table(skills_list: List[Dict], sort_by: str = 'priority_score', user_skill_names: set = None, category: str = ''):
     """Display a table of missing skills with evidence and add-to-skills button.
     
     Args:
         skills_list: List of skill dictionaries
         sort_by: Column to sort by ('priority_score' or 'frequency_count')
         user_skill_names: Set of user's existing skill names (lowercase) for filtering
+        category: Category name for unique key generation
     """
     if not skills_list:
         st.write("No skills in this category")
@@ -340,8 +480,9 @@ def _display_missing_skills_table(skills_list: List[Dict], sort_by: str = 'prior
                 else:
                     st.write("**Type:** Specific Skill")
                 
-                # Add to skills button - use index to ensure uniqueness
-                add_key = f"add_missing_skill_{idx}_{skill_name_lower}"
+                # Add to skills button - include category and sort_by to ensure uniqueness across different calls
+                category_safe = category.lower().replace(' ', '_').replace('&', 'and') if category else 'uncategorized'
+                add_key = f"add_missing_skill_{category_safe}_{sort_by}_{idx}_{skill_name_lower}"
                 if st.button("Add to My Skills", key=add_key, type="primary"):
                     # Add skill to user skills
                     skills_file = Path("data/user_skills.json")
@@ -373,7 +514,6 @@ def _display_missing_skills_table(skills_list: List[Dict], sort_by: str = 'prior
                         new_skill = UserSkill(
                             name=skill_name,
                             category=user_category,
-                            proficiency_level="beginner",  # Default to beginner for new skills
                             projects=[]
                         )
                         user_skills.skills.append(new_skill)
@@ -382,13 +522,13 @@ def _display_missing_skills_table(skills_list: List[Dict], sort_by: str = 'prior
                         with open(skills_file, 'w', encoding='utf-8') as f:
                             json.dump(user_skills.model_dump(), f, indent=2, default=str)
                         
-                        # Refresh missing skills aggregation if database is available
+                        # Mark that refresh is needed (defer actual refresh to avoid lag)
                         if db:
-                            try:
-                                analytics = AnalyticsService(db)
-                                analytics.refresh_missing_skills_aggregation()
-                            except Exception:
-                                pass  # Silently fail if refresh doesn't work
+                            st.session_state['missing_skills_refresh_needed'] = True
+                        
+                        # Invalidate match details cache so they refresh when user returns to job details
+                        if 'job_match_cache' in st.session_state:
+                            del st.session_state['job_match_cache']
                         
                         st.success(f"Added '{skill_name}' to your skills!")
                         st.rerun()

@@ -9,7 +9,6 @@ class Skill(BaseModel):
     
     name: str = Field(..., description="Canonical skill name")
     category: str = Field(..., description="Skill category (technical/soft/domain)")
-    proficiency_level: Optional[str] = Field(None, description="Proficiency level (beginner/intermediate/advanced/expert)")
     evidence: List[str] = Field(default_factory=list, description="Bullet IDs or text snippets demonstrating this skill")
     
     def __hash__(self) -> int:
@@ -62,13 +61,22 @@ class SkillOntology(BaseModel):
         return [self.canonical_skills[name] for name in skill_names if name in self.canonical_skills]
 
 
+class SkillEvidence(BaseModel):
+    """Evidence source for a skill."""
+    
+    source_type: str = Field(..., description="Type of evidence: 'experience', 'project', 'certification', 'coursework'")
+    source_name: str = Field(..., description="Name of the source (e.g., project name, company name, course name)")
+    evidence_text: Optional[str] = Field(None, description="Optional text snippet demonstrating the skill")
+    date: Optional[str] = Field(None, description="Optional date when this evidence was acquired")
+
+
 class UserSkill(BaseModel):
-    """A user-provided skill with project associations."""
+    """A user-provided skill with project associations and evidence sources."""
     
     name: str = Field(..., description="Skill name")
     category: str = Field(..., description="Skill category (e.g., Languages, ML/AI, Backend/DB)")
-    projects: List[str] = Field(default_factory=list, description="List of project names that use this skill")
-    proficiency_level: Optional[str] = Field(None, description="Proficiency level (beginner/intermediate/advanced/expert)")
+    projects: List[str] = Field(default_factory=list, description="List of project names that use this skill (deprecated - use evidence_sources instead)")
+    evidence_sources: List[SkillEvidence] = Field(default_factory=list, description="List of evidence sources (experience, projects, certifications, coursework)")
 
 
 class UserSkills(BaseModel):
@@ -84,8 +92,15 @@ class UserSkills(BaseModel):
         """Get all skills associated with a specific project."""
         project_skills = []
         for skill in self.skills:
+            # Check legacy projects list
             if project_name in skill.projects:
-                project_skills.append(skill.name)
+                if skill.name not in project_skills:
+                    project_skills.append(skill.name)
+            # Check evidence sources
+            for evidence in skill.evidence_sources:
+                if evidence.source_type == "project" and evidence.source_name == project_name:
+                    if skill.name not in project_skills:
+                        project_skills.append(skill.name)
         return project_skills
     
     def has_skill(self, skill_name: str) -> bool:

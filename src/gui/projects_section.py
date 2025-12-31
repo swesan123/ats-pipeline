@@ -10,7 +10,7 @@ sys.path.insert(0, str(project_root))
 import streamlit as st
 import json
 from src.projects.project_library import ProjectLibrary
-from src.models.resume import ProjectItem
+from src.models.resume import ProjectItem, Bullet
 from datetime import datetime
 
 
@@ -125,7 +125,6 @@ def render_projects_section():
                         # Get value from session state key (set by text_area widget)
                         bullet_text = st.session_state.get(f"project_bullet_{i}", "")
                         if bullet_text and bullet_text.strip():
-                            from src.models.resume import Bullet
                             bullets.append(Bullet(text=bullet_text.strip(), skills=[], evidence=None))
                     
                     if not bullets:
@@ -151,11 +150,11 @@ def render_projects_section():
                     st.success(f"Project '{name}' added successfully!")
                     st.rerun()
     
-    # List existing projects
+    # List existing projects with edit capability
     if projects:
         st.subheader(f"Your Projects ({len(projects)})")
         
-        for project in projects:
+        for i, project in enumerate(projects):
             with st.expander(f"{project.name}", expanded=False):
                 col1, col2 = st.columns([3, 1])
                 with col1:
@@ -165,13 +164,79 @@ def render_projects_section():
                         st.write(f"**Dates:** {project.start_date} - {end_str}")
                     
                     st.write("**Bullets:**")
-                    for i, bullet in enumerate(project.bullets, 1):
-                        st.write(f"{i}. {bullet.text}")
+                    for j, bullet in enumerate(project.bullets, 1):
+                        st.write(f"{j}. {bullet.text}")
+                    
+                    # Inline edit form
+                    with st.expander("Edit", expanded=False):
+                        new_name = st.text_input(
+                            "Project Name",
+                            value=project.name,
+                            key=f"edit_proj_name_{i}",
+                        )
+                        new_tech_stack = st.text_input(
+                            "Tech Stack (comma-separated)",
+                            value=", ".join(project.tech_stack) if project.tech_stack else "",
+                            key=f"edit_proj_tech_{i}",
+                            help="e.g., Python, TensorFlow, scikit-learn"
+                        )
+                        new_start = st.text_input(
+                            "Start Date (as shown)",
+                            value=project.start_date or "",
+                            key=f"edit_proj_start_{i}",
+                        )
+                        new_end = st.text_input(
+                            "End Date (as shown or 'Present')",
+                            value=project.end_date or "",
+                            key=f"edit_proj_end_{i}",
+                        )
+                        edited_bullets = []
+                        for j, bullet in enumerate(project.bullets, 1):
+                            txt = st.text_area(
+                                f"Bullet {j}",
+                                value=bullet.text,
+                                key=f"edit_proj_bullet_{i}_{j}",
+                                height=80,
+                            )
+                            if txt and txt.strip():
+                                edited_bullets.append(
+                                    Bullet(
+                                        text=txt.strip(),
+                                        skills=bullet.skills,
+                                        evidence=bullet.evidence,
+                                        history=bullet.history,
+                                    )
+                                )
+                        if st.button("Save Changes", key=f"save_proj_{i}", type="primary"):
+                            if not new_name:
+                                st.error("Project name is required")
+                            elif not edited_bullets:
+                                st.error("At least one bullet is required")
+                            else:
+                                # Parse tech stack
+                                tech_list = [t.strip() for t in new_tech_stack.split(',') if t.strip()] if new_tech_stack else []
+                                
+                                all_projects = library.get_all_projects()
+                                if i < len(all_projects):
+                                    all_projects[i] = ProjectItem(
+                                        name=new_name,
+                                        tech_stack=tech_list,
+                                        start_date=new_start if new_start else None,
+                                        end_date=new_end if new_end else None,
+                                        bullets=edited_bullets,
+                                    )
+                                    library._save_projects(all_projects)
+                                st.success("Project updated")
+                                st.rerun()
                 
                 with col2:
-                    if st.button("Delete", key=f"delete_project_{project.name}", type="secondary"):
-                        library.remove_project(project.name)
-                        st.success(f"Project '{project.name}' deleted")
+                    if st.button("Delete", key=f"delete_project_{i}", type="secondary"):
+                        # Remove from library
+                        all_projects = library.get_all_projects()
+                        if i < len(all_projects):
+                            all_projects.pop(i)
+                            library._save_projects(all_projects)
+                        st.success(f"Project deleted")
                         st.rerun()
     else:
         st.info("No projects yet. Add your first project above!")

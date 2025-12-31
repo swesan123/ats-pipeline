@@ -25,6 +25,46 @@ class ResumeRewriter:
         self.scorer = BulletScorer()
         self.validator = BulletValidator(ontology=self.ontology, user_skills=user_skills)
     
+    def _get_allowed_job_skills_for_user(self, job_match: JobMatch) -> List[str]:
+        """Get intersection of user skills and job skills (required + preferred).
+        
+        This is the only set of skills that can be mentioned in bullets.
+        
+        Args:
+            job_match: Job match information with job skills
+        
+        Returns:
+            List of allowed skill names (intersection of user skills and job skills)
+        """
+        if not self.user_skills:
+            return []
+        
+        user_skills_set = self.user_skills.get_all_skill_names()
+        user_skills_lower = {s.lower().strip() for s in user_skills_set}
+        
+        # Get all job skills (required + preferred)
+        job_skills_list = []
+        if hasattr(job_match, 'skill_gaps'):
+            job_skills_list.extend(job_match.skill_gaps.get("required_missing", []))
+            job_skills_list.extend(job_match.skill_gaps.get("preferred_missing", []))
+        if hasattr(job_match, 'missing_skills'):
+            job_skills_list.extend(job_match.missing_skills)
+        
+        # Find intersection: skills that are both in user's skills AND in job requirements
+        allowed_skills = []
+        for job_skill in job_skills_list:
+            job_skill_lower = job_skill.lower().strip()
+            # Check for exact match or partial match
+            for user_skill in user_skills_set:
+                user_skill_lower = user_skill.lower().strip()
+                if (user_skill_lower == job_skill_lower or 
+                    user_skill_lower in job_skill_lower or 
+                    job_skill_lower in user_skill_lower):
+                    if user_skill not in allowed_skills:
+                        allowed_skills.append(user_skill)
+        
+        return allowed_skills
+    
     def generate_variations(
         self,
         resume: Resume,
@@ -81,9 +121,16 @@ class ResumeRewriter:
             )
             
             # Step 3: Validate and filter candidates
+            # Get allowed job skills for validation
+            allowed_job_skills = self._get_allowed_job_skills_for_user(job_match)
             valid_candidates = []
             for candidate in candidates:
-                is_valid, errors = self.validator.validate(candidate, bullet.text)
+                is_valid, errors = self.validator.validate(
+                    candidate, 
+                    bullet.text, 
+                    job_skills=allowed_job_skills if allowed_job_skills else None,
+                    rewrite_intent=rewrite_intent
+                )
                 if is_valid:
                     valid_candidates.append(candidate)
                 # Log errors for debugging if needed
@@ -261,8 +308,41 @@ class ResumeRewriter:
     
     def _build_reasoning_prompt(self, bullet: Bullet, job_match: JobMatch) -> str:
         """Build prompt for reasoning generation."""
-        missing_skills_str = ", ".join(job_match.missing_skills[:10])
-        skill_gaps_str = ", ".join(job_match.skill_gaps.get("required_missing", [])[:10])
+        # Get allowed skills: intersection of user skills and job skills
+        allowed_skills = self._get_allowed_job_skills_for_user(job_match)
+        
+        # Filter missing skills to only those the user actually has AND are job-relevant
+        missing_skills_filtered = []
+        allowed_skills_lower = {s.lower().strip() for s in allowed_skills}
+        for skill in job_match.missing_skills[:10]:
+            skill_lower = skill.lower().strip()
+            if any(allowed.lower().strip() == skill_lower or 
+                   allowed.lower().strip() in skill_lower or 
+                   skill_lower in allowed.lower().strip() 
+                   for allowed in allowed_skills):
+                missing_skills_filtered.append(skill)
+        
+        # Filter required missing skills similarly
+        required_missing_filtered = []
+        for skill in job_match.skill_gaps.get("required_missing", [])[:10]:
+            skill_lower = skill.lower().strip()
+            if any(allowed.lower().strip() == skill_lower or 
+                   allowed.lower().strip() in skill_lower or 
+                   skill_lower in allowed.lower().strip() 
+                   for allowed in allowed_skills):
+                required_missing_filtered.append(skill)
+        
+        missing_skills_str = ", ".join(missing_skills_filtered) if missing_skills_filtered else "None (all covered by your skills)"
+        skill_gaps_str = ", ".join(required_missing_filtered) if required_missing_filtered else "None (all covered by your skills)"
+        
+        user_skills_note = ""
+        if allowed_skills:
+            user_skills_list = sorted(allowed_skills)[:30]  # Show first 30
+            user_skills_note = f"\n\nCRITICAL CONSTRAINT: You may ONLY work with these verified skills from the user's Skills page that are ALSO job-relevant: {', '.join(user_skills_list)}. Do NOT suggest adding any skills that are not in this list. If a job requires a skill not in this list, acknowledge it but do NOT add it to the bullet."
+        elif self.user_skills:
+            user_skills_set = self.user_skills.get_all_skill_names()
+            user_skills_list = sorted(list(user_skills_set))[:30]
+            user_skills_note = f"\n\nCRITICAL CONSTRAINT: You may ONLY work with these verified skills from the user's Skills page: {', '.join(user_skills_list)}. Do NOT suggest adding any skills that are not in this list. If a job requires a skill not in this list, acknowledge it but do NOT add it to the bullet."
         
         return f"""Analyze this resume bullet and job requirements to generate a reasoning chain for improvement.
 
@@ -272,13 +352,13 @@ Skills in Bullet: {', '.join(bullet.skills)}
 Job Requirements:
 - Missing Required Skills: {skill_gaps_str}
 - Skills Not in Resume: {missing_skills_str}
-- Matching Skills: {', '.join(job_match.matching_skills[:10])}
+- Matching Skills: {', '.join(job_match.matching_skills[:10])}{user_skills_note}
 
 Think step-by-step and provide:
-1. problem_identification: What gap/issue prompted this change?
-2. analysis: How does current bullet compare to job requirements?
-3. solution_approach: Why was this approach chosen?
-4. evaluation: Why does this variation work better?
+1. problem_identification: What gap/issue prompted this change? (Only consider gaps that can be addressed with verified skills)
+2. analysis: How does current bullet compare to job requirements? (Focus on skills you can actually add)
+3. solution_approach: Why was this approach chosen? (Only use verified skills from the Skills page)
+4. evaluation: Why does this variation work better? (Without fabricating new skills)
 5. alternatives_considered: What other approaches were considered? (list)
 6. confidence_score: Confidence in this change (0.0-1.0)
 
@@ -318,12 +398,16 @@ Return as JSON:
         """
         prompt = self._build_candidate_prompt(bullet, reasoning, job_match, project_context=project_context, project_name=project_name, rewrite_intent=rewrite_intent)
         
+        system_message = "You are an expert resume writer. Generate bullet point candidates with detailed metadata including scores, diffs, and justifications. Maintain factual accuracy - do not fabricate experience."
+        if self.user_skills:
+            system_message += " CRITICAL: You may ONLY use skills from the user's verified Skills page. Adding any skill not explicitly listed is STRICTLY FORBIDDEN and will result in rejection."
+        
         response = self.client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {
                     "role": "system",
-                    "content": "You are an expert resume writer. Generate bullet point candidates with detailed metadata including scores, diffs, and justifications. Maintain factual accuracy - do not fabricate experience."
+                    "content": system_message
                 },
                 {"role": "user", "content": prompt}
             ],
@@ -395,34 +479,80 @@ Return as JSON:
         self, bullet: Bullet, reasoning: Reasoning, job_match: JobMatch, project_context: Optional[List[str]] = None, project_name: Optional[str] = None, rewrite_intent: Optional[str] = None
     ) -> str:
         """Build prompt for variation generation."""
+        from src.compilation.bullet_feedback import BulletFeedbackStore
+        
+        # Get allowed skills: intersection of user skills and job skills
+        allowed_skills = self._get_allowed_job_skills_for_user(job_match)
+        
         context_note = ""
         if project_context:
             context_note = f"\n\nIMPORTANT - Project Context: This bullet is part of a project with tech stack: {', '.join(project_context)}. Only add skills that are relevant to this project's tech stack. Do NOT add unrelated skills (e.g., do not add Golang/Swift/Kotlin to a Python/ML project unless they are actually used in the project)."
         
-        # Add user skills restriction if available
+        # Add user skills restriction if available - STRICT ENFORCEMENT
         user_skills_note = ""
         if self.user_skills:
             # Get allowed skills for this project (if project_name provided)
             if project_name:
-                allowed_skills = self.user_skills.get_skills_for_project(project_name)
-                if allowed_skills:
-                    user_skills_note = f"\n\nCRITICAL - Allowed Skills Only: You may ONLY use these skills that are verified for this project: {', '.join(allowed_skills)}. Do NOT add any skills that are not in this list. If a required job skill is not in this list, do NOT add it to the bullet."
+                project_skills = self.user_skills.get_skills_for_project(project_name)
+                # Intersect with job-relevant skills
+                if project_skills:
+                    # Filter to only skills that are both in project AND in allowed_skills
+                    project_allowed = [s for s in project_skills if s in allowed_skills or any(s.lower() == a.lower() for a in allowed_skills)]
+                    if project_allowed:
+                        user_skills_note = f"\n\n🚫 STRICT CONSTRAINT - Allowed Skills ONLY: You MUST ONLY use these verified skills for this project that are ALSO job-relevant: {', '.join(project_allowed)}. It is FORBIDDEN to add ANY skill not in this list. If a job requires a skill not listed here, you MUST NOT add it - instead, rephrase the bullet to emphasize skills you CAN use."
+                    else:
+                        # No intersection - use project skills but warn
+                        user_skills_note = f"\n\n🚫 STRICT CONSTRAINT - Allowed Skills ONLY: You MUST ONLY use these verified skills for this project: {', '.join(project_skills)}. It is FORBIDDEN to add ANY skill not in this list."
+                else:
+                    # No project-specific skills, use allowed job skills
+                    if allowed_skills:
+                        user_skills_note = f"\n\n🚫 STRICT CONSTRAINT - Allowed Skills ONLY: You MUST ONLY use these verified skills from the Skills page that are ALSO job-relevant: {', '.join(allowed_skills[:40])}. It is FORBIDDEN to add ANY skill not in this list."
             else:
-                # For non-project bullets, use all user skills
-                all_user_skills = list(self.user_skills.get_all_skill_names())
-                if all_user_skills:
-                    user_skills_note = f"\n\nCRITICAL - Allowed Skills Only: You may ONLY use these verified skills: {', '.join(all_user_skills[:20])}. Do NOT add any skills that are not in this list. If a required job skill is not in this list, do NOT add it to the bullet."
+                # For non-project bullets, use allowed job skills
+                if allowed_skills:
+                    user_skills_note = f"\n\n🚫 STRICT CONSTRAINT - Allowed Skills ONLY: You MUST ONLY use these verified skills from the Skills page that are ALSO job-relevant: {', '.join(allowed_skills[:40])}. It is FORBIDDEN to add ANY skill not in this list. If a job requires a skill not listed here, you MUST NOT add it - instead, rephrase the bullet to emphasize skills you CAN use."
+        
+        # Filter job context to only show skills the user actually has AND are job-relevant
+        job_missing_filtered = []
+        job_required_filtered = []
+        allowed_skills_lower = {s.lower().strip() for s in allowed_skills}
+        for skill in job_match.missing_skills[:5]:
+            skill_lower = skill.lower().strip()
+            if any(allowed.lower().strip() == skill_lower or 
+                   allowed.lower().strip() in skill_lower or 
+                   skill_lower in allowed.lower().strip() 
+                   for allowed in allowed_skills):
+                job_missing_filtered.append(skill)
+        for skill in job_match.skill_gaps.get('required_missing', [])[:5]:
+            skill_lower = skill.lower().strip()
+            if any(allowed.lower().strip() == skill_lower or 
+                   allowed.lower().strip() in skill_lower or 
+                   skill_lower in allowed.lower().strip() 
+                   for allowed in allowed_skills):
+                job_required_filtered.append(skill)
+
+        # Incorporate simple user preference note based on past feedback
+        feedback_note = ""
+        try:
+            store = BulletFeedbackStore()
+            note = store.preference_note()
+            if note:
+                feedback_note = f"\\n\\nUSER PREFERENCES: {note}"
+        except Exception:
+            feedback_note = ""
         
         # Build intent-specific guidance
         intent_guidance = ""
-        if rewrite_intent == "emphasize_skills":
-            intent_guidance = "\n\nFocus: Emphasize required/preferred skills from the job description. Add skill keywords naturally."
+        if rewrite_intent == "reword_only":
+            intent_guidance = "\n\n🚫 CRITICAL: REWORD-ONLY MODE - You MUST NOT add any new skills. You may ONLY reword the existing bullet text to improve clarity, strength, or readability. The set of skills mentioned in the bullet must remain EXACTLY the same. Preserve all existing skills and do not introduce any new technical terms or skill names."
+        elif rewrite_intent == "emphasize_skills":
+            intent_guidance = "\n\nFocus: Emphasize required/preferred skills from the job description. Add skill keywords naturally, but ONLY from the allowed skills list."
         elif rewrite_intent == "more_technical":
-            intent_guidance = "\n\nFocus: Make the bullet more technical and specific. Use precise technical terminology."
+            intent_guidance = "\n\nFocus: Make the bullet more technical and specific. Use precise technical terminology, but ONLY from the allowed skills list."
         elif rewrite_intent == "more_concise":
-            intent_guidance = "\n\nFocus: Make the bullet more concise while preserving key information. Remove unnecessary words."
+            intent_guidance = "\n\nFocus: Make the bullet more concise while preserving key information. Remove unnecessary words. Do not add new skills unless they are in the allowed list."
         elif rewrite_intent == "conservative":
-            intent_guidance = "\n\nFocus: Conservative rewrite - minimal changes, only add skills that clearly fit the context. Avoid scope expansion."
+            intent_guidance = "\n\nFocus: Conservative rewrite - minimal changes, only add skills that clearly fit the context AND are in the allowed skills list. Avoid scope expansion."
         
         return f"""Generate 4 bullet candidates with detailed metadata based on the reasoning chain.
 
@@ -436,10 +566,11 @@ Reasoning:
 - Evaluation: {reasoning.evaluation}
 - Alternatives: {', '.join(reasoning.alternatives_considered[:3])}
 
-Job Context:
-- Missing Skills: {', '.join(job_match.missing_skills[:5])}
-- Required Skills: {', '.join(job_match.skill_gaps.get('required_missing', [])[:5])}
+Job Context (filtered to your verified skills only):
+- Missing Skills You Can Address: {', '.join(job_missing_filtered) if job_missing_filtered else 'None - focus on emphasizing existing skills'}
+- Required Skills You Can Address: {', '.join(job_required_filtered) if job_required_filtered else 'None - focus on emphasizing existing skills'}
 - Matching Skills: {', '.join(job_match.matching_skills[:5])}
+{feedback_note}
 
 For each candidate, provide:
 1. text: The bullet text (≤150 characters)
@@ -460,10 +591,11 @@ For each candidate, provide:
 Each candidate must:
 - Be ≤150 characters
 - Maintain factual accuracy (no fabrication)
-- Include skills that are actually demonstrated and relevant
+- Include ONLY skills from the verified Skills page list (if provided)
 - Have one clear claim per bullet
-- For project bullets: Only use skills that match the project's tech stack
-- NEVER add skills that are not in the allowed skills list (if provided)
+- For project bullets: Only use skills that match the project's tech stack AND are in your Skills page
+- NEVER add skills that are not in the allowed skills list - this is STRICTLY FORBIDDEN
+- If a job requires a skill you don't have, rephrase to emphasize skills you DO have instead of adding new ones
 
 Return as JSON:
 {{

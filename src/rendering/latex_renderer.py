@@ -5,6 +5,7 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 from src.models.resume import Resume
+from src.utils.ats_keyword_tracker import ATSKeywordTracker
 
 
 class LaTeXRenderer:
@@ -22,8 +23,13 @@ class LaTeXRenderer:
         with open(self.template_path, 'r', encoding='utf-8') as f:
             self.template_content = f.read()
     
-    def render(self, resume: Resume) -> str:
-        """Render Resume to LaTeX source."""
+    def render(self, resume: Resume, ats_tracker: Optional[ATSKeywordTracker] = None) -> str:
+        """Render Resume to LaTeX source.
+        
+        Args:
+            resume: Resume to render
+            ats_tracker: Optional ATS keyword tracker for highlighting
+        """
         # Build LaTeX content by replacing sections
         latex_output = self.template_content
         
@@ -47,12 +53,12 @@ class LaTeXRenderer:
         latex_output = re.sub(skills_pattern, lambda m: skills, latex_output, flags=re.DOTALL)
         
         # Replace experience
-        experience = self._build_experience(resume)
+        experience = self._build_experience(resume, ats_tracker)
         exp_pattern = r'%-----------WORK EXPERIENCE-----------.*?\\resumeSubHeadingListEnd'
         latex_output = re.sub(exp_pattern, lambda m: experience, latex_output, flags=re.DOTALL)
         
         # Replace projects
-        projects = self._build_projects(resume)
+        projects = self._build_projects(resume, ats_tracker)
         proj_pattern = r'%-----------PROJECTS-----------.*?\\resumeSubHeadingListEnd'
         latex_output = re.sub(proj_pattern, lambda m: projects, latex_output, flags=re.DOTALL)
         
@@ -110,38 +116,97 @@ class LaTeXRenderer:
         
         skill_lines = []
         for category, skills in resume.skills.items():
-            skills_str = ", ".join(skills)
-            skill_lines.append(f"    \\textbf{{{category}}}{{: {skills_str}}} \\\\")
+            # Ensure skills are unique and properly formatted
+            unique_skills = []
+            seen = set()
+            for skill in skills:
+                skill_key = skill.lower().strip()
+                if skill_key not in seen:
+                    seen.add(skill_key)
+                    unique_skills.append(skill)
+            
+            if unique_skills:
+                # Escape category name for LaTeX and bold it (matching original)
+                category_escaped = self._escape_latex(category)
+                # Escape each skill and join
+                skills_escaped = [self._escape_latex(skill) for skill in unique_skills]
+                skills_str = ", ".join(skills_escaped)
+                # Bold category name like original resume
+                skill_lines.append(f"    \\textbf{{{category_escaped}}}: {skills_str} \\\\")
         
         lines.extend(skill_lines)
         lines.append("  }}")
         lines.append("\\end{itemize}")
         return "\n".join(lines)
     
-    def _build_experience(self, resume: Resume) -> str:
-        """Build experience section."""
+    def _build_experience(self, resume: Resume, ats_tracker: Optional[ATSKeywordTracker] = None) -> str:
+        """Build experience section.
+        
+        Args:
+            resume: Resume to build experience from
+            ats_tracker: Optional ATS keyword tracker for highlighting
+        """
         lines = ["%-----------WORK EXPERIENCE-----------", "\\section{Work Experience}", "\\resumeSubHeadingListStart", ""]
+        bullet_id = 0
         for exp in resume.experience:
             lines.append("  \\resumeSubheading")
             lines.append(f"    {{{exp.organization}}}{{{exp.location}}}")
             lines.append(f"    {{{exp.role}}}{{{self._format_dates(exp.start_date, exp.end_date)}}}")
             lines.append("    \\resumeItemListStart")
             for bullet in exp.bullets:
+                bullet_key = f"exp_{exp.organization}_{bullet_id}"
                 bullet_text = bullet.text
-                # Highlight skills BEFORE escaping LaTeX (so \textbf doesn't get escaped)
-                for skill in bullet.skills:
-                    bullet_text = bullet_text.replace(skill, f"\\textbf{{{skill}}}")
+                
+                # Use ATS tracker for intelligent highlighting if available
+                if ats_tracker:
+                    # Get job-relevant keywords from tracker and search for them in bullet text
+                    job_relevant_keywords = ats_tracker.job_relevant_keywords
+                    import re
+                    # Sort keywords by length (longest first) to avoid partial matches
+                    keywords_to_bold = sorted(job_relevant_keywords, key=len, reverse=True)
+                    for keyword in keywords_to_bold:
+                        if not keyword.strip():
+                            continue
+                        # Escape special regex characters but preserve word boundaries
+                        keyword_escaped = re.escape(keyword)
+                        # Use word boundaries to match whole words only
+                        # Handle special cases like "C++" which contains non-word characters
+                        if re.search(r'\w', keyword):
+                            # Has word characters - use word boundaries
+                            pattern = re.compile(r'\b' + keyword_escaped + r'\b', re.IGNORECASE)
+                        else:
+                            # No word characters (e.g., "C++") - match as-is
+                            pattern = re.compile(keyword_escaped, re.IGNORECASE)
+                        # Only replace if found and not already bolded
+                        if pattern.search(bullet_text):
+                            # Check if already bolded (simple check - if \textbf{keyword} appears)
+                            already_bolded_pattern = re.compile(r'\\textbf\{[^}]*' + keyword_escaped + r'[^}]*\}', re.IGNORECASE)
+                            if not already_bolded_pattern.search(bullet_text):
+                                bullet_text = pattern.sub(lambda m: f"\\textbf{{{m.group()}}}", bullet_text)
+                else:
+                    # Fallback: bold all skills
+                    for skill in bullet.skills:
+                        if skill in bullet_text:
+                            bullet_text = bullet_text.replace(skill, f"\\textbf{{{skill}}}")
+                
                 # Now escape LaTeX special characters
                 bullet_text = self._escape_latex(bullet_text)
                 lines.append(f"      \\resumeItem{{{bullet_text}}}")
+                bullet_id += 1
             lines.append("    \\resumeItemListEnd")
             lines.append("")
         lines.append("\\resumeSubHeadingListEnd")
         return "\n".join(lines)
     
-    def _build_projects(self, resume: Resume) -> str:
-        """Build projects section."""
+    def _build_projects(self, resume: Resume, ats_tracker: Optional[ATSKeywordTracker] = None) -> str:
+        """Build projects section.
+        
+        Args:
+            resume: Resume to build projects from
+            ats_tracker: Optional ATS keyword tracker for highlighting
+        """
         lines = ["%-----------PROJECTS-----------", "\\section{Projects}", "\\resumeSubHeadingListStart", ""]
+        bullet_id = 0
         for proj in resume.projects:
             # Escape project name and tech stack (but not the braces we'll add)
             proj_name_escaped = self._escape_latex(proj.name)
@@ -155,13 +220,45 @@ class LaTeXRenderer:
             lines.append(f"    {{\\textbf{{{proj_name_escaped}}} $|$ \\textbf{{{tech_stack_escaped}}}}}{{{self._format_dates(proj.start_date, proj.end_date)}}}")
             lines.append("    \\resumeItemListStart")
             for bullet in proj.bullets:
+                bullet_key = f"proj_{proj.name}_{bullet_id}"
                 bullet_text = bullet.text
-                # Highlight skills BEFORE escaping LaTeX (so \textbf doesn't get escaped)
-                for skill in bullet.skills:
-                    bullet_text = bullet_text.replace(skill, f"\\textbf{{{skill}}}")
+                
+                # Use ATS tracker for intelligent highlighting if available
+                if ats_tracker:
+                    # Get job-relevant keywords from tracker and search for them in bullet text
+                    job_relevant_keywords = ats_tracker.job_relevant_keywords
+                    import re
+                    # Sort keywords by length (longest first) to avoid partial matches
+                    keywords_to_bold = sorted(job_relevant_keywords, key=len, reverse=True)
+                    for keyword in keywords_to_bold:
+                        if not keyword.strip():
+                            continue
+                        # Escape special regex characters but preserve word boundaries
+                        keyword_escaped = re.escape(keyword)
+                        # Use word boundaries to match whole words only
+                        # Handle special cases like "C++" which contains non-word characters
+                        if re.search(r'\w', keyword):
+                            # Has word characters - use word boundaries
+                            pattern = re.compile(r'\b' + keyword_escaped + r'\b', re.IGNORECASE)
+                        else:
+                            # No word characters (e.g., "C++") - match as-is
+                            pattern = re.compile(keyword_escaped, re.IGNORECASE)
+                        # Only replace if found and not already bolded
+                        if pattern.search(bullet_text):
+                            # Check if already bolded (simple check - if \textbf{keyword} appears)
+                            already_bolded_pattern = re.compile(r'\\textbf\{[^}]*' + keyword_escaped + r'[^}]*\}', re.IGNORECASE)
+                            if not already_bolded_pattern.search(bullet_text):
+                                bullet_text = pattern.sub(lambda m: f"\\textbf{{{m.group()}}}", bullet_text)
+                else:
+                    # Fallback: bold all skills
+                    for skill in bullet.skills:
+                        if skill in bullet_text:
+                            bullet_text = bullet_text.replace(skill, f"\\textbf{{{skill}}}")
+                
                 # Now escape LaTeX special characters
                 bullet_text = self._escape_latex(bullet_text)
                 lines.append(f"      \\resumeItem{{{bullet_text}}}")
+                bullet_id += 1
             lines.append("    \\resumeItemListEnd")
             lines.append("")
         lines.append("\\resumeSubHeadingListEnd")
@@ -262,8 +359,13 @@ class LaTeXRenderer:
         
         return text
     
-    def render_pdf(self, resume: Resume, output_path: Optional[Path] = None) -> Path:
+    def render_pdf(self, resume: Resume, output_path: Optional[Path] = None, ats_tracker: Optional[ATSKeywordTracker] = None) -> Path:
         """Render Resume to PDF.
+        
+        Args:
+            resume: Resume to render
+            output_path: Path to save PDF
+            ats_tracker: Optional ATS keyword tracker for highlighting
         
         Returns: Path to generated PDF.
         """
@@ -273,7 +375,7 @@ class LaTeXRenderer:
         output_path = Path(output_path)
         
         # Generate LaTeX
-        latex_content = self.render(resume)
+        latex_content = self.render(resume, ats_tracker)
         
         # Write to temporary file
         with tempfile.TemporaryDirectory() as tmpdir:

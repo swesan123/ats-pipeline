@@ -82,6 +82,15 @@ class Bullet(BaseModel):
         if len(v) > 150:
             raise ValueError(f"Bullet text must be 150 characters or less, got {len(v)}")
         return v
+    
+    @field_validator("skills")
+    @classmethod
+    def validate_skills(cls, v: List[str]) -> List[str]:
+        """Normalize and deduplicate skills."""
+        from src.utils.skill_categorizer import _deduplicate_skills
+        if not v:
+            return []
+        return _deduplicate_skills(v)
 
 
 class ExperienceItem(BaseModel):
@@ -113,6 +122,15 @@ class ProjectItem(BaseModel):
     start_date: Optional[str] = Field(None, description="Start date")
     end_date: Optional[str] = Field(None, description="End date or 'Present'")
     bullets: List[Bullet] = Field(default_factory=list, description="Bullet points describing the project")
+    
+    @field_validator("tech_stack")
+    @classmethod
+    def validate_tech_stack(cls, v: List[str]) -> List[str]:
+        """Normalize and deduplicate tech stack."""
+        from src.utils.skill_categorizer import _deduplicate_skills
+        if not v:
+            return []
+        return _deduplicate_skills(v)
 
 
 class Resume(BaseModel):
@@ -134,6 +152,19 @@ class Resume(BaseModel):
     projects: List[ProjectItem] = Field(default_factory=list, description="Projects")
     hobbies: List[str] = Field(default_factory=list, description="Hobbies and interests")
     courses: List[str] = Field(default_factory=list, description="Relevant courses")
+    
+    @field_validator("skills")
+    @classmethod
+    def validate_skills_dict(cls, v: dict[str, List[str]]) -> dict[str, List[str]]:
+        """Normalize and deduplicate skills in each category."""
+        from src.utils.skill_categorizer import _deduplicate_skills
+        normalized = {}
+        for category, skills_list in v.items():
+            if skills_list:
+                normalized[category] = _deduplicate_skills(skills_list)
+            else:
+                normalized[category] = []
+        return normalized
     
     # Versioning
     version: int = Field(1, description="Resume version number")
