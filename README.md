@@ -16,7 +16,8 @@ End-to-end job application pipeline with skill matching, explainable resume comp
 - **User Skills Management**: Prevent skill fabrication with user-provided skills JSON
 - **Project Selection**: Automatically select relevant projects from your project library
 - **Resume Reuse System**: Automatically detect and reuse resumes from similar jobs
-- **Streamlit GUI**: Visual job management interface
+- **Next.js Frontend**: Modern web interface built with React and TypeScript
+- **FastAPI Backend**: RESTful API for all backend operations
 - **Database Persistence**: SQLite database for tracking jobs, matches, and changes
 - **Google Sheets Sync**: One-way sync from Google Sheets to database for job tracking
 - **Resume Organization**: Organized resume storage with date-based folders and human-readable filenames
@@ -26,6 +27,7 @@ End-to-end job application pipeline with skill matching, explainable resume comp
 ## Prerequisites
 
 - Python 3.10 or higher
+- Node.js 18+ and npm (for frontend)
 - LaTeX distribution (for PDF generation):
   - **Linux/WSL**: 
     ```bash
@@ -110,15 +112,23 @@ End-to-end job application pipeline with skill matching, explainable resume comp
    **Note:** This step is only required if you plan to extract skills from job URLs. File-based extraction works without Playwright.
 
 7. **Set up environment variables:**
-   Create a `.env` file in the project root (optional) or export the variable:
+   Create a `.env` file in the project root (optional) or export the variables:
    ```bash
    export OPENAI_API_KEY="your-api-key-here"
+   export GITHUB_TOKEN="your-github-token-here"  # Optional, for GitHub project import
    ```
    
    Or create `.env` file:
    ```bash
    echo "OPENAI_API_KEY=your-api-key-here" > .env
+   echo "GITHUB_TOKEN=your-github-token-here" >> .env  # Optional
    ```
+   
+   **GitHub Token (Optional):**
+   - Required for importing projects from private GitHub repositories
+   - Recommended for higher API rate limits when importing from public repositories
+   - Create a personal access token at: https://github.com/settings/tokens
+   - Token needs `public_repo` scope for public repos, or `repo` scope for private repos
 
 ## Setup Checklist
 
@@ -130,6 +140,7 @@ Before using the pipeline, ensure you have:
 - ✅ Package installed in editable mode (`pip install -e .`)
 - ✅ Playwright browsers installed (`python3 -m playwright install`) - **Required for job URL extraction**
 - ✅ OpenAI API key set in `.env` file or environment variable
+- ✅ GITHUB_TOKEN set in `.env` file or environment variable (optional, for GitHub project import)
 - ✅ LaTeX distribution installed (for PDF generation)
 
 ## Quick Start
@@ -458,6 +469,13 @@ The GUI provides:
 - **Right Panel**: View all jobs in a table with fit scores
 - **Job Details**: Click a job to see details and generate resume
 - **Interactive Approval**: Review reasoning chains and approve variations
+- **Projects Management**: Add projects manually or import from GitHub repositories
+  - **Manual Entry**: Fill in project details (name, tech stack, dates, bullets)
+  - **GitHub Import**: Paste a GitHub repository URL to automatically extract:
+    - Project name from repository
+    - Tech stack from README, dependency files, and GitHub API
+    - Bullets from README.md sections
+    - Creation date from repository metadata
 
 ## Project Structure
 
@@ -795,6 +813,8 @@ The pipeline includes a project library system that allows you to store all your
 ### Setting Up Your Project Library
 
 1. **Add projects to the library:**
+   
+   **Via CLI:**
    ```bash
    # Add all projects from your resume
    ats add-project --resume-json data/resume.json
@@ -802,6 +822,23 @@ The pipeline includes a project library system that allows you to store all your
    # Or add a specific project
    ats add-project --resume-json data/resume.json --name "Project Name"
    ```
+   
+   **Via GUI (Recommended):**
+   - Navigate to the "Projects" page in the GUI
+   - Click "Add New Project"
+   - Choose "Add through GitHub" option
+   - Paste your GitHub repository URL (e.g., `https://github.com/owner/repo`)
+   - Click "Import from GitHub"
+   - Review and edit the extracted information
+   - Click "Save Project"
+   
+   The GitHub import automatically extracts:
+   - **Tech Stack**: From README.md mentions, dependency files (package.json, requirements.txt, etc.), and GitHub API languages
+   - **Bullets**: From README.md sections (Features, Highlights, etc.)
+   - **Dates**: Repository creation date
+   - **Description**: From README.md
+   
+   **Note**: For private repositories or higher API rate limits, set `GITHUB_TOKEN` in your `.env` file.
 
 2. **List projects in library:**
    ```bash

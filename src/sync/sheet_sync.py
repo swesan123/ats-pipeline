@@ -89,11 +89,6 @@ class SheetSyncService:
                 stats['errors'] += 1
                 error_msg = f"Row {idx}: {str(e)}"
                 stats['error_details'].append(error_msg)
-                if not dry_run:
-                    print(f"Error processing row {idx}: {e}")
-                import traceback
-                if not dry_run:
-                    traceback.print_exc()
         
         return stats
     
@@ -395,7 +390,7 @@ class SheetSyncService:
         """
         try:
             # Get all jobs from database
-            jobs = self.db.list_jobs()
+            jobs = self.db.get_all_jobs()
             if not jobs:
                 return {'created': 0, 'updated': 0, 'errors': 0, 'error_details': []}
             

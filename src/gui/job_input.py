@@ -125,7 +125,8 @@ def _extract_job_info_from_text(text: str) -> tuple[str, str]:
 
 
 def _save_job_from_text(db: Database, text: str, source_url: str = None, 
-                        manual_title: str = None, manual_company: str = None):
+                        manual_title: str = None, manual_company: str = None,
+                        status: str = None):
     """Save a job from text description.
     
     Args:
@@ -134,6 +135,7 @@ def _save_job_from_text(db: Database, text: str, source_url: str = None,
         source_url: Optional source URL
         manual_title: Optional manually provided job title (overrides auto-detection)
         manual_company: Optional manually provided company name (overrides auto-detection)
+        status: Optional job status
     """
     from src.extractors.job_skills import JobSkillExtractor
     from src.gui.job_helpers import auto_match_skills
@@ -163,7 +165,7 @@ def _save_job_from_text(db: Database, text: str, source_url: str = None,
     job_skills = extractor.extract_skills(job_posting)
     
     # Save to database
-    job_id = db.save_job(job_posting, job_skills)
+    job_id = db.save_job(job_posting, job_skills=job_skills, status=status)
     
     # Auto-match skills if resume exists
     resume = db.get_latest_resume()

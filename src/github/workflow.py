@@ -1,7 +1,6 @@
 """GitHub MCP integration for automated workflow management."""
 
 from typing import List, Optional
-import os
 
 
 class GitHubWorkflow:

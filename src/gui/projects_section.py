@@ -11,7 +11,9 @@ import streamlit as st
 import json
 from src.projects.project_library import ProjectLibrary
 from src.models.resume import ProjectItem, Bullet
+from src.extractors.github_repo_extractor import GitHubRepoExtractor
 from datetime import datetime
+import requests
 
 
 def render_projects_section():
@@ -27,25 +29,175 @@ def render_projects_section():
     
     # Add new project form
     with st.expander("Add New Project", expanded=False):
+        # Add method selection (Manual or GitHub)
+        if 'add_method' not in st.session_state:
+            st.session_state.add_method = "Manual"
         
-        # Handle remove bullet buttons (check session state for removals)
-        bullets_to_remove = []
-        for i in range(len(st.session_state.project_bullets)):
-            if f"remove_bullet_{i}" in st.session_state and st.session_state[f"remove_bullet_{i}"]:
-                if len(st.session_state.project_bullets) > 1:
-                    bullets_to_remove.append(i)
+        method = st.radio(
+            "Add method:",
+            ["Manual Entry", "Add through GitHub"],
+            key="add_method_radio",
+            index=0 if st.session_state.add_method == "Manual" else 1,
+            horizontal=True
+        )
+        st.session_state.add_method = "Manual" if method == "Manual Entry" else "GitHub"
         
-        # Remove bullets (in reverse order to maintain indices)
-        for idx in sorted(bullets_to_remove, reverse=True):
-            st.session_state.project_bullets.pop(idx)
-            # Also remove the corresponding session state keys
-            if f"project_bullet_{idx}" in st.session_state:
-                del st.session_state[f"project_bullet_{idx}"]
-            if f"remove_bullet_{idx}" in st.session_state:
-                del st.session_state[f"remove_bullet_{idx}"]
-            st.rerun()
+        # GitHub import section
+        if st.session_state.add_method == "GitHub":
+            github_url = st.text_input(
+                "GitHub Repository URL",
+                key="github_url_input",
+                placeholder="https://github.com/owner/repo",
+                help="Enter the full URL of the GitHub repository"
+            )
+            
+            if st.button("Import from GitHub", key="import_github_btn", type="primary"):
+                if not github_url:
+                    st.error("Please enter a GitHub repository URL")
+                else:
+                    try:
+                        with st.spinner("Extracting project information from GitHub..."):
+                            extractor = GitHubRepoExtractor()
+                            extracted_project = extractor.extract_project(github_url)
+                            
+                            # Store extracted project in session state for preview/edit
+                            st.session_state.github_extracted_project = extracted_project
+                            st.session_state.show_github_preview = True
+                            st.success("Project information extracted successfully!")
+                            st.rerun()
+                    except ValueError as e:
+                        st.error(f"Invalid GitHub URL: {str(e)}")
+                    except requests.HTTPError as e:
+                        if e.response.status_code == 404:
+                            st.error("Repository not found. Please check the URL.")
+                        elif e.response.status_code == 403:
+                            st.error("Access denied. The repository may be private. Make sure GITHUB_TOKEN is set in your environment.")
+                        else:
+                            st.error(f"GitHub API error: {str(e)}")
+                    except Exception as e:
+                        st.error(f"Error extracting project: {str(e)}")
+            
+            # Show preview/edit form for extracted project
+            if st.session_state.get("show_github_preview") and st.session_state.get("github_extracted_project"):
+                st.divider()
+                st.subheader("Review and Edit Extracted Information")
+                
+                extracted = st.session_state.github_extracted_project
+                
+                with st.form("github_project_preview_form"):
+                    preview_name = st.text_input("Project Name", value=extracted.name, key="preview_name")
+                    preview_tech_stack = st.text_input(
+                        "Tech Stack (comma-separated)",
+                        value=", ".join(extracted.tech_stack) if extracted.tech_stack else "",
+                        key="preview_tech_stack"
+                    )
+                    preview_start_date = st.text_input(
+                        "Start Date",
+                        value=extracted.start_date or "",
+                        key="preview_start_date",
+                        help="Format: Jan 2024"
+                    )
+                    preview_end_date = st.text_input(
+                        "End Date (or 'Present')",
+                        value=extracted.end_date or "",
+                        key="preview_end_date"
+                    )
+                    
+                    st.write("**Bullets:**")
+                    # Initialize preview bullets in session state if needed
+                    if 'preview_bullets_list' not in st.session_state:
+                        st.session_state.preview_bullets_list = [bullet.text for bullet in extracted.bullets]
+                    
+                    preview_bullets = []
+                    for i in range(len(st.session_state.preview_bullets_list)):
+                        current_value = st.session_state.preview_bullets_list[i] if i < len(st.session_state.preview_bullets_list) else ""
+                        bullet_text = st.text_area(
+                            f"Bullet {i+1}",
+                            value=current_value,
+                            key=f"preview_bullet_{i}",
+                            height=80
+                        )
+                        # Update session state
+                        if i < len(st.session_state.preview_bullets_list):
+                            st.session_state.preview_bullets_list[i] = bullet_text
+                        else:
+                            st.session_state.preview_bullets_list.append(bullet_text)
+                        
+                        if bullet_text and bullet_text.strip():
+                            preview_bullets.append(bullet_text.strip())
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.form_submit_button("Save Project", type="primary"):
+                            if not preview_name:
+                                st.error("Project name is required")
+                            elif not preview_bullets:
+                                st.error("At least one bullet is required")
+                            else:
+                                # Parse tech stack
+                                tech_list = [t.strip() for t in preview_tech_stack.split(',') if t.strip()] if preview_tech_stack else []
+                                
+                                # Create project
+                                project = ProjectItem(
+                                    name=preview_name,
+                                    tech_stack=tech_list,
+                                    start_date=preview_start_date if preview_start_date else None,
+                                    end_date=preview_end_date if preview_end_date else None,
+                                    bullets=[Bullet(text=b, skills=[], evidence=None) for b in preview_bullets]
+                                )
+                                
+                                library.add_project(project)
+                                
+                                # Clear session state
+                                if 'github_extracted_project' in st.session_state:
+                                    del st.session_state.github_extracted_project
+                                if 'show_github_preview' in st.session_state:
+                                    del st.session_state.show_github_preview
+                                if 'preview_bullets_list' in st.session_state:
+                                    del st.session_state.preview_bullets_list
+                                
+                                st.success(f"Project '{preview_name}' added successfully!")
+                                st.rerun()
+                    
+                    with col2:
+                        if st.form_submit_button("Cancel", type="secondary"):
+                            if 'github_extracted_project' in st.session_state:
+                                del st.session_state.github_extracted_project
+                            if 'show_github_preview' in st.session_state:
+                                del st.session_state.show_github_preview
+                            if 'preview_bullets_list' in st.session_state:
+                                del st.session_state.preview_bullets_list
+                            st.rerun()
+                
+                # Add bullet button (outside form)
+                if st.button("+ Add Bullet", key="preview_add_bullet"):
+                    if 'preview_bullets_list' not in st.session_state:
+                        st.session_state.preview_bullets_list = [bullet.text for bullet in extracted.bullets]
+                    st.session_state.preview_bullets_list.append("")
+                    st.rerun()
+            
+            st.divider()
         
-        with st.form("add_project_form"):
+        # Manual entry form
+        if st.session_state.add_method == "Manual":
+            # Handle remove bullet buttons (check session state for removals)
+            bullets_to_remove = []
+            for i in range(len(st.session_state.project_bullets)):
+                if f"remove_bullet_{i}" in st.session_state and st.session_state[f"remove_bullet_{i}"]:
+                    if len(st.session_state.project_bullets) > 1:
+                        bullets_to_remove.append(i)
+            
+            # Remove bullets (in reverse order to maintain indices)
+            for idx in sorted(bullets_to_remove, reverse=True):
+                st.session_state.project_bullets.pop(idx)
+                # Also remove the corresponding session state keys
+                if f"project_bullet_{idx}" in st.session_state:
+                    del st.session_state[f"project_bullet_{idx}"]
+                if f"remove_bullet_{idx}" in st.session_state:
+                    del st.session_state[f"remove_bullet_{idx}"]
+                st.rerun()
+            
+            with st.form("add_project_form"):
             name = st.text_input("Project Name", key="project_name")
             tech_stack = st.text_input("Tech Stack (comma-separated)", key="project_tech_stack", 
                                        help="e.g., Python, TensorFlow, scikit-learn")
@@ -82,14 +234,14 @@ def render_projects_section():
             # Add bullet button (beneath bullet entries, inside form but using form_submit_button won't work)
             # Use a workaround: add button outside form but check if form context
             submitted = st.form_submit_button("Add Project", type="primary")
-        
-        # Add bullet button (outside form, beneath entries)
-        st.write("")  # Spacer
-        if st.button("+ Add Bullet", key="add_bullet_btn"):
-            st.session_state.project_bullets.append("")
-            st.rerun()
             
+            # Handle form submission
             if submitted:
+                name = st.session_state.get("project_name", "")
+                tech_stack = st.session_state.get("project_tech_stack", "")
+                start_date = st.session_state.get("project_start_date", "")
+                end_date = st.session_state.get("project_end_date", "")
+                
                 if not name:
                     st.error("Project name is required")
                 else:
@@ -149,6 +301,13 @@ def render_projects_section():
                     library.add_project(project)
                     st.success(f"Project '{name}' added successfully!")
                     st.rerun()
+        
+        # Add bullet button (outside form, beneath entries)
+        if st.session_state.add_method == "Manual":
+            st.write("")  # Spacer
+            if st.button("+ Add Bullet", key="add_bullet_btn"):
+                st.session_state.project_bullets.append("")
+                st.rerun()
     
     # List existing projects with edit capability
     if projects:

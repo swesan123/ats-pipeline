@@ -16,7 +16,7 @@ def test_match_job_runs_without_import_errors():
         organization="TestOrg",
         role="Engineer",
         location="Nowhere",
-        start_date=None,
+        start_date="2020-01",  # start_date is required and must be a string
         end_date=None,
         bullets=[Bullet(text="Did things in Python.", skills=["Python"], evidence=None)],
     )

@@ -1,5 +1,6 @@
 """Extract skills from job descriptions using OpenAI."""
 
+import json
 import os
 from typing import Optional
 from openai import OpenAI
@@ -32,7 +33,6 @@ class JobSkillExtractor:
         )
         
         # Parse response
-        import json
         result = json.loads(response.choices[0].message.content)
         
         return JobSkills(

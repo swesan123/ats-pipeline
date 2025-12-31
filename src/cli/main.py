@@ -2,7 +2,9 @@
 
 import json
 import sys
+import traceback
 from pathlib import Path
+from typing import Optional
 import click
 from src.parsers.latex_resume import LaTeXResumeParser
 from src.extractors.job_skills import JobSkillExtractor
@@ -18,6 +20,54 @@ from src.projects.project_library import ProjectLibrary
 from src.projects.project_selector import ProjectSelector
 
 
+def _load_job_skills_from_file(job_path: Path) -> tuple[JobSkills, Optional[JobPosting]]:
+    """Load job skills from JSON file, handling both old and new formats.
+    
+    Returns:
+        Tuple of (JobSkills, Optional[JobPosting])
+    """
+    with open(job_path, 'r', encoding='utf-8') as f:
+        job_data = json.load(f)
+    
+    # Handle both formats: old (just job_skills) and new (job_posting + job_skills)
+    if 'job_skills' in job_data:
+        job_skills = JobSkills.model_validate(job_data['job_skills'])
+        job_posting = JobPosting.model_validate(job_data.get('job_posting')) if 'job_posting' in job_data else None
+    else:
+        # Old format - assume entire file is job_skills
+        job_skills = JobSkills.model_validate(job_data)
+        job_posting = None
+    
+    return job_skills, job_posting
+
+
+def _load_skill_ontology(ontology_path: Optional[str]) -> SkillOntology:
+    """Load skill ontology from file or return empty ontology.
+    
+    Args:
+        ontology_path: Optional path to ontology JSON file
+        
+    Returns:
+        SkillOntology instance
+    """
+    if ontology_path and Path(ontology_path).exists():
+        with open(ontology_path, 'r', encoding='utf-8') as f:
+            ontology_data = json.load(f)
+            return SkillOntology.model_validate(ontology_data)
+    return SkillOntology()
+
+
+def _ensure_data_dir() -> Path:
+    """Ensure data directory exists and return its path.
+    
+    Returns:
+        Path to data directory
+    """
+    data_dir = Path("data")
+    data_dir.mkdir(exist_ok=True)
+    return data_dir
+
+
 @click.group()
 def cli():
     """ATS Pipeline CLI - Job application pipeline with skill matching and resume compilation."""
@@ -29,9 +79,7 @@ def cli():
 def convert_latex(input_tex):
     """Convert LaTeX resume to JSON. Output is saved to data/resume.json"""
     try:
-        # Create data directory if it doesn't exist
-        data_dir = Path("data")
-        data_dir.mkdir(exist_ok=True)
+        data_dir = _ensure_data_dir()
         output_json = data_dir / "resume.json"
         
         parser = LaTeXResumeParser.from_file(Path(input_tex))
@@ -47,7 +95,6 @@ def convert_latex(input_tex):
         click.echo(f"Successfully converted {input_tex} to {output_json}")
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
-        import traceback
         traceback.print_exc()
         sys.exit(1)
 
@@ -58,9 +105,7 @@ def convert_latex(input_tex):
 def extract_skills(job_input, use_playwright):
     """Extract skills from job URL or description file. Output is saved to data/job_skills.json"""
     try:
-        # Create data directory if it doesn't exist
-        data_dir = Path("data")
-        data_dir.mkdir(exist_ok=True)
+        data_dir = _ensure_data_dir()
         output_json = data_dir / "job_skills.json"
         
         # Check if input is a URL or file path
@@ -122,7 +167,6 @@ def extract_skills(job_input, use_playwright):
         click.echo(f"  Soft: {len(job_skills.soft_skills)} skills")
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
-        import traceback
         traceback.print_exc()
         sys.exit(1)
 
@@ -150,24 +194,11 @@ def match_job(resume_json, job_json, ontology):
         with open(resume_path, 'r', encoding='utf-8') as f:
             resume = Resume.model_validate_json(f.read())
         
-        # Load job skills (handle both old format and new format with job_posting)
-        with open(job_path, 'r', encoding='utf-8') as f:
-            job_data = json.load(f)
-        
-        # Handle both formats: old (just job_skills) and new (job_posting + job_skills)
-        if 'job_skills' in job_data:
-            job_skills = JobSkills.model_validate(job_data['job_skills'])
-        else:
-            # Old format - assume entire file is job_skills
-            job_skills = JobSkills.model_validate(job_data)
+        # Load job skills
+        job_skills, _ = _load_job_skills_from_file(job_path)
         
         # Load ontology
-        if ontology and Path(ontology).exists():
-            with open(ontology, 'r', encoding='utf-8') as f:
-                ontology_data = json.load(f)
-                skill_ontology = SkillOntology.model_validate(ontology_data)
-        else:
-            skill_ontology = SkillOntology()
+        skill_ontology = _load_skill_ontology(ontology)
         
         # Match
         matcher = SkillMatcher(skill_ontology)
@@ -212,9 +243,7 @@ def match_job(resume_json, job_json, ontology):
 def rewrite_resume(resume_json, job_json, ontology, user_skills, reuse_threshold, similarity_threshold, force_new):
     """Generate resume rewrite proposals with interactive approval. Output is saved to data/resume_updated.json"""
     try:
-        # Create data directory if it doesn't exist
-        data_dir = Path("data")
-        data_dir.mkdir(exist_ok=True)
+        data_dir = _ensure_data_dir()
         output_path = data_dir / "resume_updated.json"
         
         resume_path = Path(resume_json)
@@ -231,24 +260,18 @@ def rewrite_resume(resume_json, job_json, ontology, user_skills, reuse_threshold
         with open(resume_path, 'r', encoding='utf-8') as f:
             resume = Resume.model_validate_json(f.read())
         
-        # Load job skills (handle both old format and new format with job_posting)
-        with open(job_path, 'r', encoding='utf-8') as f:
-            job_data = json.load(f)
-        
-        # Handle both formats: old (just job_skills) and new (job_posting + job_skills)
-        if 'job_skills' in job_data:
-            job_skills = JobSkills.model_validate(job_data['job_skills'])
-        else:
-            # Old format - assume entire file is job_skills
-            job_skills = JobSkills.model_validate(job_data)
+        # Load job skills and posting
+        job_skills, job_posting = _load_job_skills_from_file(job_path)
         
         # Load ontology
-        if ontology and Path(ontology).exists():
-            with open(ontology, 'r', encoding='utf-8') as f:
-                ontology_data = json.load(f)
-                skill_ontology = SkillOntology.model_validate(ontology_data)
-        else:
-            skill_ontology = SkillOntology()
+        skill_ontology = _load_skill_ontology(ontology)
+        
+        # Load user skills if provided
+        user_skills_obj = None
+        if user_skills and Path(user_skills).exists():
+            with open(user_skills, 'r', encoding='utf-8') as f:
+                user_skills_data = json.load(f)
+                user_skills_obj = UserSkills.model_validate(user_skills_data)
         
         # Check for reusable resume (if database is available)
         if not force_new:
@@ -364,7 +387,6 @@ def rewrite_resume(resume_json, job_json, ontology, user_skills, reuse_threshold
         click.echo(f"Also saved to: {output_path}")
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
-        import traceback
         traceback.print_exc()
         sys.exit(1)
 
@@ -453,16 +475,7 @@ def select_projects(job_json, max_projects, min_score, output):
     """Select most relevant projects for a job posting."""
     try:
         # Load job skills
-        with open(job_json, 'r', encoding='utf-8') as f:
-            job_data = json.load(f)
-        
-        # Handle new format with job_posting key
-        if 'job_skills' in job_data:
-            job_skills_data = job_data.get('job_skills', {})
-        else:
-            job_skills_data = job_data
-        
-        job_skills = JobSkills.model_validate(job_skills_data)
+        job_skills, _ = _load_job_skills_from_file(Path(job_json))
         
         # Select projects
         selector = ProjectSelector()
@@ -490,7 +503,6 @@ def select_projects(job_json, max_projects, min_score, output):
         click.echo(f"\nSaved selected projects to {output_path}")
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
-        import traceback
         traceback.print_exc()
         sys.exit(1)
 
@@ -507,8 +519,7 @@ def select_projects(job_json, max_projects, min_score, output):
 def apply(job_url, resume_json, user_skills, skip_match, use_playwright, reuse_threshold, similarity_threshold, force_new):
     """Run the entire application flow: extract-skills → match-job → rewrite-resume → render-pdf"""
     try:
-        data_dir = Path("data")
-        data_dir.mkdir(exist_ok=True)
+        data_dir = _ensure_data_dir()
         
         job_skills_path = data_dir / "job_skills.json"
         resume_updated_path = data_dir / "resume_updated.json"
@@ -663,7 +674,6 @@ def apply(job_url, resume_json, user_skills, skip_match, use_playwright, reuse_t
         
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
-        import traceback
         traceback.print_exc()
         sys.exit(1)
 
@@ -724,7 +734,6 @@ def sync_sheet(credentials, spreadsheet_id, sheet_name, dry_run):
         sys.exit(1)
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
-        import traceback
         traceback.print_exc()
         sys.exit(1)
 
@@ -734,9 +743,7 @@ def sync_sheet(credentials, spreadsheet_id, sheet_name, dry_run):
 def render_pdf(resume_json):
     """Generate PDF from JSON resume. Output is saved to data/resume.pdf"""
     try:
-        # Create data directory if it doesn't exist
-        data_dir = Path("data")
-        data_dir.mkdir(exist_ok=True)
+        data_dir = _ensure_data_dir()
         output_path = data_dir / "resume.pdf"
         
         resume_path = Path(resume_json)
@@ -769,7 +776,6 @@ def deduplicate_jobs():
         click.echo(f"- Kept: {stats['kept']} unique jobs")
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
-        import traceback
         traceback.print_exc()
         sys.exit(1)
 
