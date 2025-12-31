@@ -51,7 +51,12 @@ def render_job_list(db: Database):
     with col_refresh:
         # Simple refresh button
         if st.button("↻", help="Re-run skill matching for all jobs", key="refresh_jobs", width='stretch'):
+            # Preserve selected_job_id before refresh
+            current_selected = st.session_state.get('selected_job_id')
             st.session_state['refreshing_jobs'] = True
+            # Restore selected_job_id after refresh
+            if current_selected:
+                st.session_state['selected_job_id'] = current_selected
             st.rerun()
     with col_add:
         # Add Job button - opens dialog
@@ -266,12 +271,39 @@ def render_job_list(db: Database):
                 self.selection = DummySelection()
         selected_rows = DummyRows()
     
-    # Handle download clicks (check if download column was clicked)
+    # Handle job selection - check session state first, then dataframe selection
+    selected_job = None
+    selected_job_id = None
+    selected_idx = None
+    
+    # Check if there's a preserved selected_job_id in session state first
+    if 'selected_job_id' in st.session_state and st.session_state['selected_job_id'] is not None:
+        # Find the job index by ID
+        selected_job_id = st.session_state['selected_job_id']
+        for idx, job in enumerate(jobs):
+            if job.get('id') == selected_job_id:
+                selected_idx = idx
+                selected_job = jobs[selected_idx]
+                break
+        
+        if selected_idx is None:
+            # Job not found, clear selection
+            st.session_state['selected_job_id'] = None
+    
+    # If no selection from session state, check dataframe selection
+    # Also check if user selected a different job (even if we have one from session state)
     if selected_rows.selection.rows:
         selected_idx = selected_rows.selection.rows[0]
-        selected_job_id = int(df.iloc[selected_idx]['id'])
-        selected_job = jobs[selected_idx]
-        
+        new_selected_job_id = int(df.iloc[selected_idx]['id'])
+        # If user selected a different job, update selection
+        if selected_job_id is None or new_selected_job_id != selected_job_id:
+            selected_job_id = new_selected_job_id
+            selected_job = jobs[selected_idx]
+            # Store in session state for persistence
+            st.session_state['selected_job_id'] = selected_job_id
+    
+    # Only proceed if we have a selected job (either from session state or dataframe)
+    if selected_job is not None:
         # Get job object for download
         from src.models.job import JobPosting
         job_obj = JobPosting(
@@ -285,7 +317,14 @@ def render_job_list(db: Database):
         
         # Status editor
         st.divider()
-        current_status = str(df.iloc[selected_idx]['Status'])
+        # Get current status - always fetch from database to ensure we have the latest
+        job_from_db = db.get_job_full(selected_job_id)
+        if job_from_db and job_from_db.get('status'):
+            current_status = str(job_from_db['status'])
+        elif selected_idx is not None:
+            current_status = str(df.iloc[selected_idx]['Status'])
+        else:
+            current_status = str(selected_job.get('status', 'New'))
         
         col1, col2 = st.columns([2, 1])
         with col1:
@@ -308,8 +347,10 @@ def render_job_list(db: Database):
         if update_button:
             try:
                 if new_status != current_status:
+                    # Preserve selected_job_id before update (it's already in session state)
                     db.update_job_status(selected_job_id, new_status)
                     st.success(f"Status updated to: **{new_status}**")
+                    # selected_job_id is already in session_state, so it will persist across rerun
                     st.rerun()
             except Exception as e:
                 st.error(f"Error updating status: {e}")

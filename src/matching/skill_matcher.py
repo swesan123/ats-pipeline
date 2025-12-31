@@ -50,7 +50,11 @@ class SkillMatcher:
         # Extract from skills section
         for category, skill_list in resume.skills.items():
             category_lower = category.lower()
-            if "language" in category_lower or "ml" in category_lower or "ai" in category_lower:
+            # Match new category names: Languages, ML/AI, Mobile/Web, Backend/DB, DevOps, Operating Systems, Security, Tools
+            if ("language" in category_lower or "ml" in category_lower or "ai" in category_lower or 
+                "mobile" in category_lower or "web" in category_lower or "backend" in category_lower or 
+                "db" in category_lower or "devops" in category_lower or "operating" in category_lower or 
+                "security" in category_lower or "tools" in category_lower):
                 skills_dict["technical"].extend(skill_list)
             elif "soft" in category_lower:
                 skills_dict["soft"].extend(skill_list)
@@ -71,7 +75,7 @@ class SkillMatcher:
         # Normalize and deduplicate
         for key in skills_dict:
             skills_dict[key] = list(set(s.lower().strip() for s in skills_dict[key] if s.strip()))
-        
+
         return skills_dict
     
     def _calculate_fit_score(
@@ -104,7 +108,6 @@ class SkillMatcher:
             (preferred_matches / total_preferred) * 1.0 +
             (soft_matches / total_soft) * 0.5
         ) / 3.5  # Normalize by total weight
-        
         return min(1.0, max(0.0, score))
     
     def _skill_matches(self, job_skill: str, resume_skills: List[str]) -> bool:

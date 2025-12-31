@@ -133,7 +133,7 @@ def render_experience_section():
                     st.success(f"Experience at {organization} added successfully!")
                     st.rerun()
     
-    # List existing experience
+    # List existing experience with edit capability
     if experience_items:
         st.subheader(f"Your Experience ({len(experience_items)})")
         
@@ -149,6 +149,70 @@ def render_experience_section():
                     st.write("**Bullets:**")
                     for j, bullet in enumerate(exp.bullets, 1):
                         st.write(f"{j}. {bullet.text}")
+                    
+                    # Inline edit form
+                    with st.expander("Edit", expanded=False):
+                        new_org = st.text_input(
+                            "Company/Organization",
+                            value=exp.organization,
+                            key=f"edit_org_{i}",
+                        )
+                        new_role = st.text_input(
+                            "Job Title/Role",
+                            value=exp.role,
+                            key=f"edit_role_{i}",
+                        )
+                        new_location = st.text_input(
+                            "Location",
+                            value=exp.location or "",
+                            key=f"edit_loc_{i}",
+                        )
+                        new_start = st.text_input(
+                            "Start Date (as shown)",
+                            value=exp.start_date or "",
+                            key=f"edit_start_{i}",
+                        )
+                        new_end = st.text_input(
+                            "End Date (as shown)",
+                            value=exp.end_date or "",
+                            key=f"edit_end_{i}",
+                        )
+                        edited_bullets = []
+                        for j, bullet in enumerate(exp.bullets, 1):
+                            txt = st.text_area(
+                                f"Bullet {j}",
+                                value=bullet.text,
+                                key=f"edit_bullet_{i}_{j}",
+                                height=80,
+                            )
+                            if txt and txt.strip():
+                                edited_bullets.append(
+                                    Bullet(
+                                        text=txt.strip(),
+                                        skills=bullet.skills,
+                                        evidence=bullet.evidence,
+                                        history=bullet.history,
+                                    )
+                                )
+                        if st.button("Save Changes", key=f"save_exp_{i}", type="primary"):
+                            if not new_org or not new_role:
+                                st.error("Company and role are required")
+                            elif not edited_bullets:
+                                st.error("At least one bullet is required")
+                            else:
+                                all_experience = exp_library.get_all_experience()
+                                if i < len(all_experience):
+                                    all_experience[i] = ExperienceItem(
+                                        organization=new_org,
+                                        role=new_role,
+                                        location=new_location,
+                                        start_date=new_start,
+                                        end_date=new_end,
+                                        bullets=edited_bullets,
+                                    )
+                                    exp_library._save_experience(all_experience)
+                                st.success("Experience updated")
+                                st.rerun()
                 
                 with col2:
                     if st.button("Delete", key=f"delete_exp_{i}", type="secondary"):

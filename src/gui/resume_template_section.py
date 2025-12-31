@@ -79,7 +79,6 @@ def render_resume_template_section():
                                 new_skill = UserSkill(
                                     name=skill_name,
                                     category=category,
-                                    proficiency_level="intermediate",  # Default
                                     projects=[]
                                 )
                                 user_skills.skills.append(new_skill)
